@@ -7,6 +7,8 @@
 - [kind](https://kind.sigs.k8s.io/docs/user/quick-start/) : A good starting point for a single node cluster on a local laptop
 - [k3s](https://k3s.io/) : A good starting point for a single node cluster on a virtual machine
 
+You can also install [k9s](https://k9scli.io/) to view and manage your cluster with a TUI.
+
 ### MacOS
 
 - [rancher](https://rancher-desktop.io/) : A good starting point for a single node cluster with a GUI. Uses k3s under the hood.
@@ -78,7 +80,7 @@ MacOS users should use [rancher](#macos) and [mkcert](#mkcert) to set up the loc
 Follow the [ESS Community README](https://github.com/element-hq/ess-helm).
 
 For local testing:
- - For the DNS, you can use your `/etc/hosts` file
+ - For the DNS, use any `*.localhost` domain. They will automatically point to your local machine.
  - For the certificates, "Use existing certificates" option with mkcert.
 
 ##### Matrix RTC local setup
