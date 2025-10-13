@@ -69,7 +69,7 @@ Cert-Manager is a Kubernetes project that manages certificates for you. See the 
 
 #### Linux
 
-Linux users can use the script `scripts/setup_dev_cluster.sh` to set up a local cluster with a local CA.
+Linux users can use the script [`scripts/setup_dev_cluster.sh`](https://github.com/element-hq/ess-helm/blob/main/scripts/setup_test_cluster.sh) to set up a local cluster with a local CA.
 
 #### MacOS & Windows
 
