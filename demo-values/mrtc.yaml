@@ -1,0 +1,13 @@
+matrixRTC:
+  extraEnv:
+  - name: LIVEKIT_INSECURE_SKIP_VERIFY_TLS
+    value: YES_I_KNOW_WHAT_I_AM_DOING
+  hostAliases:
+  - hostnames:
+    - ess.localhost
+    - mrtc.ess.localhost
+    - matrix.ess.localhost
+    ip: '{{ ( (lookup "v1" "Service" "ingress-nginx" "ingress-nginx-controller") |
+      default (dict "spec" (dict "clusterIP" "127.0.0.1")) ).spec.clusterIP }}'
+  sfu:
+    useStunToDiscoverPublicIP: false

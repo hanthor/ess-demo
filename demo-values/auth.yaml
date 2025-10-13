@@ -1,0 +1,11 @@
+matrixAuthenticationService:
+  image:
+    tag: 1.4.0-rc.1
+  additional:
+    auth.yaml:
+      config: |
+        account:
+          password_registration_enabled: true
+          password_change_allowed: true
+          registration_token_required: true
+          password_registration_email_required: false
