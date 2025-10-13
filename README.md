@@ -119,6 +119,24 @@ matrixAuthenticationService:
           password_registration_email_required: false
 ```
 
+##### Enable local discovery of users
+
+By default, Synapse only allows users to be searched depending on the rooms they share.
+
+The following values should be used to enable local discovery of all users.
+
+```yml
+
+synapse:
+  additional:
+    user-directory.yaml:
+      config: |
+        user_directory:
+          enabled: true
+          search_all_users: true
+          prefer_local_users: true
+```
+
 ### VPS
 
 For VPS, you should follow the ESS Walkthrough.

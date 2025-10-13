@@ -9,3 +9,12 @@ matrixAuthenticationService:
           password_change_allowed: true
           registration_token_required: true
           password_registration_email_required: false
+
+synapse:
+  additional:
+    user-directory.yaml:
+      config: |
+        user_directory:
+          enabled: false
+          search_all_users: true
+          prefer_local_users: true
