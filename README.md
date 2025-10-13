@@ -160,7 +160,7 @@ NAME                                                   READY   STATUS      RESTA
   ```
   ess-synapse-main-0                                     1/1     Running     0          10m
   ```
-  1. Matrix Authentication Service starts and will handle all the users authentication.
+  1. Matrix Authentication Service starts.
   ```
   ess-matrix-authentication-service-56597f54c5-fqd9b     1/1     Running     0          10m
   ```
@@ -169,7 +169,7 @@ NAME                                                   READY   STATUS      RESTA
   ess-matrix-rtc-authorisation-service-9ff6d44d5-z7n2n   1/1     Running     0          10m
   ess-matrix-rtc-sfu-5896d47fd4-5dvs2                    1/1     Running     0          10m
   ```
-  1. Element Web and Element Admin clients allows user to use ESS.
+  1. Element Web and Element Admin clients start.
   ```
   ess-element-admin-59b96c7fc8-p2thz                     1/1     Running     0          10m
   ess-element-web-56f99c8889-hszzj                       1/1     Running     0          10m
