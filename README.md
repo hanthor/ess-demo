@@ -36,27 +36,67 @@ Initialize the namespace with `kubectl create namespace ess`.
 
 Useful to set up ESS on a local machine. See the [github project](https://github.com/FiloSottile/mkcert)
 
+The workshop repository contains a script to set up local certificates on your local machine.
+
 Example usage:
 
 ```bash
-mkcert -install
-mkcert ess.localhost
-kubectl create secret tls ess-well-known-certificate --cert=./ess.localhost.pem --key=./ess.localhost-key.pem -n ess
+$ ./build-certs.sh
+Enter the base domain name for the certificates : ess-matrix-2025.localhost
 
-mkcert matrix.ess.localhost
-kubectl create secret tls ess-matrix-certificate --cert=./matrix.ess.localhost.pem --key=./matrix.ess.localhost-key.pem -n ess
+Created a new certificate valid for the following names 📜
+ - "ess-matrix-2025.localhost"
 
-mkcert mrtc.ess.localhost
-kubectl create secret tls ess-mrtc-certificate --cert=./mrtc.ess.localhost.pem --key=./mrtc.ess.localhost-key.pem -n ess
+The certificate is at "./ess-matrix-2025.localhost.pem" and the key at "./ess-matrix-2025.localhost-key.pem" ✅
 
-mkcert chat.ess.localhost
-kubectl create secret tls ess-chat-certificate --cert=./chat.ess.localhost.pem --key=./chat.ess.localhost-key.pem -n ess
+It will expire on 14 January 2028 🗓
 
-mkcert auth.ess.localhost
-kubectl create secret tls ess-auth-certificate --cert=./auth.ess.localhost.pem --key=./auth.ess.localhost-key.pem -n ess
+secret/ess-well-known-certificate created
 
-mkcert admin.ess.localhost
-kubectl create secret tls ess-admin-certificate --cert=./admin.ess.localhost.pem --key=./admin.ess.localhost-key.pem -n ess
+Created a new certificate valid for the following names 📜
+ - "matrix.ess-matrix-2025.localhost"
+
+The certificate is at "./matrix.ess-matrix-2025.localhost.pem" and the key at "./matrix.ess-matrix-2025.localhost-key.pem" ✅
+
+It will expire on 14 January 2028 🗓
+
+secret/ess-matrix-certificate created
+
+Created a new certificate valid for the following names 📜
+ - "mrtc.ess-matrix-2025.localhost"
+
+The certificate is at "./mrtc.ess-matrix-2025.localhost.pem" and the key at "./mrtc.ess-matrix-2025.localhost-key.pem" ✅
+
+It will expire on 14 January 2028 🗓
+
+secret/ess-mrtc-certificate created
+
+Created a new certificate valid for the following names 📜
+ - "chat.ess-matrix-2025.localhost"
+
+The certificate is at "./chat.ess-matrix-2025.localhost.pem" and the key at "./chat.ess-matrix-2025.localhost-key.pem" ✅
+
+It will expire on 14 January 2028 🗓
+
+secret/ess-chat-certificate created
+
+Created a new certificate valid for the following names 📜
+ - "auth.ess-matrix-2025.localhost"
+
+The certificate is at "./auth.ess-matrix-2025.localhost.pem" and the key at "./auth.ess-matrix-2025.localhost-key.pem" ✅
+
+It will expire on 14 January 2028 🗓
+
+secret/ess-auth-certificate created
+
+Created a new certificate valid for the following names 📜
+ - "admin.ess-matrix-2025.localhost"
+
+The certificate is at "./admin.ess-matrix-2025.localhost.pem" and the key at "./admin.ess-matrix-2025.localhost-key.pem" ✅
+
+It will expire on 14 January 2028 🗓
+
+secret/ess-admin-certificate created
 ```
 
 ### Cert-Manager
@@ -94,9 +134,9 @@ matrixRTC:
     value: YES_I_KNOW_WHAT_I_AM_DOING
   hostAliases:
   - hostnames:
-    - ess.localhost
-    - mrtc.ess.localhost
-    - synapse.ess.localhost
+    - "{{ $.Values.serverName }}"
+    - "{{ $.Values.matrixRTC.ingress.host }}"
+    - "{{ $.Values.synapse.ingress.host }}"
     ip: '{{ ( (lookup "v1" "Service" "ingress-nginx" "ingress-nginx-controller") |
       default (dict "spec" (dict "clusterIP" "127.0.0.1")) ).spec.clusterIP }}'
 ```
