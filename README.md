@@ -17,7 +17,7 @@ You can also install [k9s](https://k9scli.io/) to view and manage your cluster w
 
 - [rancher](https://rancher-desktop.io/) : A good starting point for a single node cluster with a GUI. Uses k3s under the hood.
 
-## kubectl (Kubernetes Command Line Interface)
+## kubectl (Kubernetes Command Line Interface)
 
 - Go to the [kubernetes.io](https://kubernetes.io/docs/tasks/tools/) page to download and install kubectl
 
@@ -28,11 +28,31 @@ You can also install [k9s](https://k9scli.io/) to view and manage your cluster w
 
 - Go to the [helm.sh](https://helm.sh/docs/intro/install/) page to download and install helm
 
-## Certificates
+## Set-up
+
+### Local laptops
+
+#### Linux
+
+Linux users can use the script from ESS Community repo [`scripts/setup_dev_cluster.sh`](https://github.com/element-hq/ess-helm/blob/main/scripts/setup_test_cluster.sh) to set up a local cluster with a local CA.
+
+#### MacOS & Windows
+
+MacOS users should use [rancher](#macos) and [mkcert](#mkcert) to set up the local CA.
+
+#### Setup
+
+Follow the [ESS Community README](https://github.com/element-hq/ess-helm).
+
+For local testing:
+ - For the DNS, use any `*.localhost` domain. They will automatically point to your local machine.
+ - For the certificates, "Use existing certificates" option with mkcert. See below for a script simplifying the setup for the workshop.
+
+##### Certificates
 
 Initialize the namespace with `kubectl create namespace ess`.
 
-### mkcert
+###### mkcert
 
 Useful to set up ESS on a local machine. See the [github project](https://github.com/FiloSottile/mkcert)
 
@@ -41,7 +61,7 @@ The workshop repository contains a script to set up local certificates on your l
 Example usage:
 
 ```bash
-$ ./build-certs.sh
+$ ./build-certs.sh demo-values/hostnames.yaml demo-values
 Enter the base domain name for the certificates : ess-matrix-2025.localhost
 
 Created a new certificate valid for the following names 📜
@@ -99,30 +119,6 @@ It will expire on 14 January 2028 🗓
 secret/ess-admin-certificate created
 ```
 
-### Cert-Manager
-
-Cert-Manager is a Kubernetes project that manages certificates for you. See the ESS Community README for more details.
-
-## Set-up
-
-### Local laptops
-
-#### Linux
-
-Linux users can use the script [`scripts/setup_dev_cluster.sh`](https://github.com/element-hq/ess-helm/blob/main/scripts/setup_test_cluster.sh) to set up a local cluster with a local CA.
-
-#### MacOS & Windows
-
-MacOS users should use [rancher](#macos) and [mkcert](#mkcert) to set up the local CA.
-
-#### Setup
-
-Follow the [ESS Community README](https://github.com/element-hq/ess-helm).
-
-For local testing:
- - For the DNS, use any `*.localhost` domain. They will automatically point to your local machine.
- - For the certificates, "Use existing certificates" option with mkcert.
-
 ##### Matrix RTC local setup
 
 The following values should be used to test matrix RTC locally.
@@ -179,7 +175,7 @@ synapse:
 
 ### VPS
 
-For VPS, you should follow the ESS Walkthrough.
+For VPS, you should follow the ESS Community README.
 
 ### Explaining the install process
 
@@ -195,7 +191,7 @@ NAME                                                   READY   STATUS      RESTA
 
 #### Setup steps
 
-1. The deployment markers run first, and make sure that the state of the installation is compatible with the options passed in the values files. For example, it would prevent disabling MAS once ESS is setup with MAS enabled.
+1. The deployment markers run first, and make sure that the state of the installation is compatible with the values passed in the values files. For example, it would prevent disabling MAS once ESS is setup with MAS enabled.
   ```
   ess-deployment-markers-pre-6c75f                       0/1     Completed   0          11m
   ```
@@ -203,7 +199,7 @@ NAME                                                   READY   STATUS      RESTA
   ```
   ess-init-secrets-kdh42                                 0/1     Completed   0          11m
   ```
-1. A job runs before the main installation to check that Synapse configuration is OK
+1. A job runs before the main installation to check that runs basic checks against synapse configuration
   ```
   ess-synapse-check-config-69t7c                         0/1     Completed   0          11m
   ```
@@ -251,8 +247,12 @@ kubectl exec -n ess -it deploy/ess-matrix-authentication-service -- mas-cli mana
 
 #### Open the admin UI
 
-Go to `https://admin.ess.localhost` and login with the credentials you just created.
+Go to `https://<admin ui hostname>` and login with the credentials you just created.
 
 #### Create a new registration token
 
 From the Admin UI, create a new registration token. This can be used to register a new user.
+
+#### Open the web client
+
+Go to  `https://<web client hostname>` and register new users using registration tokens issued before.

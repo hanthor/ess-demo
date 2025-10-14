@@ -1,26 +1,36 @@
 #!/bin/bash
 
+set -euo pipefail
+
+hostnamesFile=$1
+outputDirectory=$2
+
+admin=$(cat $hostnamesFile | grep "elementAdmin": -A2 | grep "host:" | sed "s/.*host: //")
+chat=$(cat $hostnamesFile | grep "elementWeb": -A2 | grep "host:" | sed "s/.*host: //")
+synapse=$(cat $hostnamesFile | grep "synapse": -A2 | grep "host:" | sed "s/.*host: //")
+auth=$(cat $hostnamesFile | grep "matrixAuthenticationService": -A2 | grep "host:" | sed "s/.*host: //")
+mrtc=$(cat $hostnamesFile | grep "matrixRTC": -A2 | grep "host:" | sed "s/.*host: //")
+servername=$(cat $hostnamesFile | grep "serverName": | sed "s/.*serverName: //")
 
 mkcert -install
-echo -n "Enter the base domain name for the certificates (ideally under .localhost) : "
-read BASE_DOMAIN
 
-cd demo-values
-mkcert "$BASE_DOMAIN"
-kubectl create secret tls ess-well-known-certificate "--cert=./$BASE_DOMAIN.pem" "--key=./$BASE_DOMAIN-key.pem" -n ess
+mkdir -p "$outputDirectory"
+cd "$outputDirectory"
+mkcert "$servername"
+kubectl create secret tls ess-well-known-certificate "--cert=./$servername.pem" "--key=./$servername-key.pem" -n ess
 
-mkcert "matrix.$BASE_DOMAIN"
-kubectl create secret tls ess-matrix-certificate "--cert=./matrix.$BASE_DOMAIN.pem" "--key=./matrix.$BASE_DOMAIN-key.pem" -n ess
+mkcert "$synapse"
+kubectl create secret tls ess-matrix-certificate "--cert=./$synapse.pem" "--key=./$synapse-key.pem" -n ess
 
-mkcert "mrtc.$BASE_DOMAIN"
-kubectl create secret tls ess-mrtc-certificate "--cert=./mrtc.$BASE_DOMAIN.pem" "--key=./mrtc.$BASE_DOMAIN-key.pem" -n ess
+mkcert "$mrtc"
+kubectl create secret tls ess-mrtc-certificate "--cert=./$mrtc.pem" "--key=./$mrtc-key.pem" -n ess
 
-mkcert "chat.$BASE_DOMAIN"
-kubectl create secret tls ess-chat-certificate "--cert=./chat.$BASE_DOMAIN.pem" "--key=./chat.$BASE_DOMAIN-key.pem" -n ess
+mkcert "$chat"
+kubectl create secret tls ess-chat-certificate "--cert=./$chat.pem" "--key=./$chat-key.pem" -n ess
 
-mkcert "auth.$BASE_DOMAIN"
-kubectl create secret tls ess-auth-certificate "--cert=./auth.$BASE_DOMAIN.pem" "--key=./auth.$BASE_DOMAIN-key.pem" -n ess
+mkcert "$auth"
+kubectl create secret tls ess-auth-certificate "--cert=./$auth.pem" "--key=./$auth-key.pem" -n ess
 
-mkcert "admin.$BASE_DOMAIN"
-kubectl create secret tls ess-admin-certificate "--cert=./admin.$BASE_DOMAIN.pem" "--key=./admin.$BASE_DOMAIN-key.pem" -n ess
+mkcert "$admin"
+kubectl create secret tls ess-admin-certificate "--cert=./$admin.pem" "--key=./$admin-key.pem" -n ess
 cd -
