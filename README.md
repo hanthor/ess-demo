@@ -34,7 +34,7 @@ You can also install [k9s](https://k9scli.io/) to view and manage your cluster w
 
 #### Linux
 
-Linux users can use the script from ESS Community repo [`scripts/setup_dev_cluster.sh`](https://github.com/element-hq/ess-helm/blob/main/scripts/setup_test_cluster.sh) to set up a local cluster with a local CA.
+Linux users can use the script from ESS Community repo [`scripts/setup_dev_cluster.sh`](https://github.com/element-hq/ess-helm/blob/main/scripts/setup_test_cluster.sh) to set up a local cluster ready to use.
 
 #### MacOS & Windows
 
@@ -45,7 +45,7 @@ MacOS users should use [rancher](#macos) and [mkcert](#mkcert) to set up the loc
 Follow the [ESS Community README](https://github.com/element-hq/ess-helm).
 
 For local testing:
- - For the DNS, use any `*.localhost` domain. They will automatically point to your local machine.
+ - For the DNS hostnames, use any `*.localhost` domain. They will automatically point to your local machine.
  - For the certificates, "Use existing certificates" option with mkcert. See below for a script simplifying the setup for the workshop.
 
 ##### Certificates
@@ -121,7 +121,7 @@ secret/ess-admin-certificate created
 
 ##### Matrix RTC local setup
 
-The following values should be used to test matrix RTC locally.
+The following values should be used to test Matrix RTC locally.
 
 ```yml
 matrixRTC:
