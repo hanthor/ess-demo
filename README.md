@@ -133,6 +133,14 @@ It will expire on 14 January 2028 🗓
 secret/ess-admin-certificate created
 ```
 
+##### To setup the default demo files
+
+```bash
+cd demo-values
+helm upgrade --install --namespace "ess" ess oci://ghcr.io/element-hq/ess-helm/matrix-stack -f hostnames.yaml  -f tls.yaml -f auth.yaml -f mrtc.yaml -f pull-policy.yml --wait
+cd -
+```
+
 ##### Matrix RTC local setup
 
 The following values should be used to test Matrix RTC locally.
