@@ -36,6 +36,18 @@ You can also install [k9s](https://k9scli.io/) to view and manage your cluster w
 
 Linux users can use the script from ESS Community repo [`scripts/setup_dev_cluster.sh`](https://github.com/element-hq/ess-helm/blob/main/scripts/setup_test_cluster.sh) to set up a local cluster ready to use.
 
+Clone the ess-helm repository:
+
+```bash
+$ git clone https://github.com/element-hq/ess-helm
+```
+
+Run the setup script :
+
+```bash
+$ ./scripts/setup_dev_cluster.sh
+```
+
 #### MacOS & Windows
 
 MacOS users should use [rancher](#macos) and [mkcert](#mkcert) to set up the local CA.

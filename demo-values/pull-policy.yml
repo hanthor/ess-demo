@@ -1,2 +1,6 @@
 image:
   pullPolicy: IfNotPresent
+
+synapse:
+  image:
+    tag: v1.138.4
