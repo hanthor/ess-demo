@@ -54,7 +54,9 @@ MacOS users should use [rancher](#macos) and [mkcert](#mkcert) to set up the loc
 
 #### Setup
 
-Follow the [ESS Community README](https://github.com/element-hq/ess-helm).
+Follow the [ESS Community README](https://github.com/element-hq/ess-helm/tree/main?tab=readme-ov-file#setting-up-the-stack).
+
+If you are using the values from this repo, you can skip configuring your values from the demo files.
 
 For local testing:
  - For the DNS hostnames, use any `*.localhost` domain. They will automatically point to your local machine.
