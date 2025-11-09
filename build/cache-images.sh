@@ -5,6 +5,10 @@
 
 set -euo pipefail
 
+# Source container runtime utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/container-runtime.sh"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -13,7 +17,6 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Script directory
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CACHE_DIR="${SCRIPT_DIR}/image-cache"
 KIND_IMAGES_DIR="${CACHE_DIR}/kind-images"
 ESS_IMAGES_DIR="${CACHE_DIR}/ess-images"
@@ -22,6 +25,13 @@ HELM_CACHE_DIR="${CACHE_DIR}/helm-charts"
 # Kubernetes and Kind versions
 KIND_NODE_VERSION="v1.28.0"
 KIND_NODE_IMAGE="kindest/node:${KIND_NODE_VERSION}"
+
+# Detect container runtime
+CONTAINER_RUNTIME=$(detect_container_runtime)
+if [ -z "$CONTAINER_RUNTIME" ]; then
+    echo "✗ Error: No container runtime found. Install Docker or Podman."
+    exit 1
+fi
 
 # Function to print colored messages
 print_info() {
@@ -47,6 +57,7 @@ print_header() {
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 }
+
 
 # Check if skopeo is available
 check_skopeo() {

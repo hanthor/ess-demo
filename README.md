@@ -4,32 +4,63 @@ A fully portable, offline-capable demo of Element Server Suite (ESS) Community t
 
 ## 🚀 Quick Start
 
-### Prerequisites
+### For Package Builders
 
-- **Internet connection** (only for initial download of installers)
+If you're building offline distribution packages:
+
+```bash
+# Install Just (task runner)
+brew install just  # macOS/Linux
+# or choco install just  # Windows
+
+# Complete automated setup
+just setup
+
+# Or step by step:
+just download-all      # Download installers for all platforms
+just cache-images      # Cache container images
+just build-packages    # Build distribution packages
+```
+
+See [`JUSTFILE-README.md`](JUSTFILE-README.md) for full automation documentation.
+
+### For End Users
+
+If you received a pre-built offline package, see the `INSTALL.md` in your platform package:
+- `packages/macos/INSTALL.md`
+- `packages/linux/INSTALL.md`
+- `packages/windows/INSTALL.md`
+
+## Prerequisites
+
+- **Internet connection** (only for initial download of installers during build)
 - **Administrator/sudo privileges** (for installation)
 - **~10GB free disk space** (~15GB for full air-gapped cache)
 
+## Build Process
+
 ### Step 1: Download Installers
 
-First, download all required software for offline use:
+Download all required software for offline use:
 
 **macOS / Linux:**
 ```bash
 # Download for current platform only
-./download-installers.sh
+just download-current
+# Or: build/download-installers.sh
 
 # Or download for ALL platforms (macOS, Linux, Windows)
-./download-installers.sh --all
+just download-all
+# Or: build/download-installers.sh --all
 ```
 
 **Windows (run PowerShell as Administrator):**
 ```powershell
 # Download for Windows only
-.\download-installers.ps1
+build\download-installers.ps1
 
 # Or download for ALL platforms
-.\download-installers.ps1 -All
+build\download-installers.ps1 -All
 ```
 
 This downloads (~700MB-1GB per platform, or ~3-4GB for all platforms):
@@ -40,12 +71,13 @@ This downloads (~700MB-1GB per platform, or ~3-4GB for all platforms):
 - k9s (Kubernetes TUI)
 - mkcert (Local certificate authority)
 
-### Step 1.5: Cache Images for Air-Gapped Deployment (Optional)
+### Step 2: Cache Images for Air-Gapped Deployment (Optional)
 
 For completely offline/air-gapped deployment, cache all container images:
 
 ```bash
-./cache-images.sh -y
+just cache-images
+# Or: build/cache-images.sh -y
 ```
 
 This downloads (~3-4GB):
@@ -56,7 +88,12 @@ This downloads (~3-4GB):
 
 **Note:** This requires Docker to be running.
 
-### Step 1.6: Verify Offline Readiness (Optional)
+### Step 3: Build Distribution Packages
+
+```bash
+just build-packages
+# Builds: packages/macos/, packages/linux/, packages/windows/
+```
 
 Before going offline, verify all components are cached:
 
