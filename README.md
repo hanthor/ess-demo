@@ -1,203 +1,413 @@
-# ess-matrix-conf-2025
+# ESS Community - Portable Cross-Platform Demo
 
-## Single Node Kubernetes Clusters
+A fully portable, offline-capable demo of Element Server Suite (ESS) Community that works on macOS, Windows, and Linux. This demo uses Docker, Kind (Kubernetes in Docker), and mkcert to provide a complete local ESS environment.
 
-### Linux
+## 🚀 Quick Start
 
-- [kind](https://kind.sigs.k8s.io/docs/user/quick-start/) : A good starting point for a single node cluster on a local laptop
-- [k3s](https://k3s.io/) : A good starting point for a single node cluster on a virtual machine
+### Prerequisites
 
-You can also install [k9s](https://k9scli.io/) to view and manage your cluster with a TUI.
+- **Internet connection** (only for initial download of installers)
+- **Administrator/sudo privileges** (for installation)
+- **~10GB free disk space** (~15GB for full air-gapped cache)
 
-### MacOS
+### Step 1: Download Installers
 
-- [rancher](https://rancher-desktop.io/) : A good starting point for a single node cluster with a GUI. Uses k3s under the hood.
+First, download all required software for offline use:
 
-### Windows
+**macOS / Linux:**
+```bash
+# Download for current platform only
+./download-installers.sh
 
-- [rancher](https://rancher-desktop.io/) : A good starting point for a single node cluster with a GUI. Uses k3s under the hood.
+# Or download for ALL platforms (macOS, Linux, Windows)
+./download-installers.sh --all
+```
 
-## kubectl (Kubernetes Command Line Interface)
+**Windows (run PowerShell as Administrator):**
+```powershell
+# Download for Windows only
+.\download-installers.ps1
 
-- Go to the [kubernetes.io](https://kubernetes.io/docs/tasks/tools/) page to download and install kubectl
+# Or download for ALL platforms
+.\download-installers.ps1 -All
+```
 
-- With rancher, use `kubectl config use-context rancher-desktop` to switch to the rancher context.
-- With kind, use `kubectl config use-context kind-<cluster name>` to switch to the kind context.
+This downloads (~700MB-1GB per platform, or ~3-4GB for all platforms):
+- Docker Desktop (macOS/Windows) or Docker Engine (Linux)
+- Kind (Kubernetes in Docker)
+- kubectl (Kubernetes CLI)
+- Helm (Package manager)
+- k9s (Kubernetes TUI)
+- mkcert (Local certificate authority)
 
-## Helm
+### Step 1.5: Cache Images for Air-Gapped Deployment (Optional)
 
-- Go to the [helm.sh](https://helm.sh/docs/intro/install/) page to download and install helm
-
-## Set-up
-
-### Local laptops
-
-#### Linux
-
-Linux users can use the script from ESS Community repo [`scripts/setup_dev_cluster.sh`](https://github.com/element-hq/ess-helm/blob/main/scripts/setup_test_cluster.sh) to set up a local cluster ready to use.
-
-Clone the ess-helm repository:
+For completely offline/air-gapped deployment, cache all container images:
 
 ```bash
-$ git clone https://github.com/element-hq/ess-helm
+./cache-images.sh -y
 ```
 
-Run the setup script :
+This downloads (~3-4GB):
+- Kind node image
+- ESS Helm chart
+- All ESS component images
+- NGINX Ingress images
+
+**Note:** This requires Docker to be running.
+
+### Step 1.6: Verify Offline Readiness (Optional)
+
+Before going offline, verify all components are cached:
 
 ```bash
-$ ./scripts/setup_dev_cluster.sh
+./verify-offline.sh
 ```
 
-#### MacOS & Windows
+This checks for:
+- Docker availability
+- Cached installers for all platforms
+- Cached container images
+- Helm charts
+- Configuration files
 
-MacOS users should use [rancher](#macos) and [mkcert](#mkcert) to set up the local CA.
+### Step 2: Run Setup
 
-#### Setup
+**macOS / Linux:**
+```bash
+# Default mode: uses cached images (offline mode)
+./setup.sh
 
-Follow the [ESS Community README](https://github.com/element-hq/ess-helm/tree/main?tab=readme-ov-file#setting-up-the-stack).
+# To pull images from internet instead (online mode)
+./setup.sh --online
+```
 
-If you are using the values from this repo, you can skip configuring your values from the demo files.
+**Windows (run PowerShell as Administrator):**
+```powershell
+.\setup.ps1
+```
 
-For local testing:
- - For the DNS hostnames, use any `*.localhost` domain. They will automatically point to your local machine.
- - For the certificates, "Use existing certificates" option with mkcert. See below for a script simplifying the setup for the workshop.
+The setup script will:
+1. ✓ Install all dependencies from local cache
+2. ✓ Create a Kind Kubernetes cluster
+3. ✓ Prompt you for a domain name (e.g., `ess.localhost`)
+4. ✓ Generate SSL certificates using mkcert
+5. ✓ Deploy ESS Community with all services
+6. ✓ Configure ingress and networking
 
-##### Certificates
+⏱️ **Setup time:** 5-10 minutes
 
-Initialize the namespace with `kubectl create namespace ess`.
+## 📋 What's Included
 
-###### mkcert
+This demo includes:
 
-Useful to set up ESS on a local machine. See the [github project](https://github.com/FiloSottile/mkcert)
+- **Element Web** - Modern Matrix web client
+- **Element Admin** - Server administration interface
+- **Synapse** - Matrix homeserver
+- **Matrix Authentication Service** - User authentication and management
+- **Matrix RTC** - Real-time communication (audio/video calls)
+- **PostgreSQL** - Database backend
+- **NGINX Ingress** - HTTP/HTTPS routing
 
-The workshop repository contains a script to set up local certificates on your local machine.
+## 🌐 Access Your Instance
 
-Example usage:
+After setup completes, access your ESS instance at:
+
+- **Element Web:** `https://chat.<your-domain>`
+- **Admin Portal:** `https://admin.<your-domain>`
+- **Matrix Server:** `https://matrix.<your-domain>`
+- **Authentication:** `https://auth.<your-domain>`
+
+Replace `<your-domain>` with the domain you entered during setup.
+
+## 🔧 Management Commands
+
+### Download Software
 
 ```bash
-$ ./build-certs.sh demo-values/hostnames.yaml demo-values
-Enter the base domain name for the certificates : ess-matrix-2025.localhost
+# Download for current platform
+./download-installers.sh
 
-Created a new certificate valid for the following names 📜
- - "ess-matrix-2025.localhost"
-
-The certificate is at "./ess-matrix-2025.localhost.pem" and the key at "./ess-matrix-2025.localhost-key.pem" ✅
-
-It will expire on 14 January 2028 🗓
-
-secret/ess-well-known-certificate created
-
-Created a new certificate valid for the following names 📜
- - "matrix.ess-matrix-2025.localhost"
-
-The certificate is at "./matrix.ess-matrix-2025.localhost.pem" and the key at "./matrix.ess-matrix-2025.localhost-key.pem" ✅
-
-It will expire on 14 January 2028 🗓
-
-secret/ess-matrix-certificate created
-
-Created a new certificate valid for the following names 📜
- - "mrtc.ess-matrix-2025.localhost"
-
-The certificate is at "./mrtc.ess-matrix-2025.localhost.pem" and the key at "./mrtc.ess-matrix-2025.localhost-key.pem" ✅
-
-It will expire on 14 January 2028 🗓
-
-secret/ess-mrtc-certificate created
-
-Created a new certificate valid for the following names 📜
- - "chat.ess-matrix-2025.localhost"
-
-The certificate is at "./chat.ess-matrix-2025.localhost.pem" and the key at "./chat.ess-matrix-2025.localhost-key.pem" ✅
-
-It will expire on 14 January 2028 🗓
-
-secret/ess-chat-certificate created
-
-Created a new certificate valid for the following names 📜
- - "auth.ess-matrix-2025.localhost"
-
-The certificate is at "./auth.ess-matrix-2025.localhost.pem" and the key at "./auth.ess-matrix-2025.localhost-key.pem" ✅
-
-It will expire on 14 January 2028 🗓
-
-secret/ess-auth-certificate created
-
-Created a new certificate valid for the following names 📜
- - "admin.ess-matrix-2025.localhost"
-
-The certificate is at "./admin.ess-matrix-2025.localhost.pem" and the key at "./admin.ess-matrix-2025.localhost-key.pem" ✅
-
-It will expire on 14 January 2028 🗓
-
-secret/ess-admin-certificate created
+# Download for ALL platforms (great for preparing portable demos)
+./download-installers.sh --all    # Unix
+.\download-installers.ps1 -All    # Windows
 ```
 
-##### To setup the default demo files
+### Cache Images for Air-Gapped Use
 
 ```bash
-cd demo-values
-helm upgrade --install --namespace "ess" ess oci://ghcr.io/element-hq/ess-helm/matrix-stack -f hostnames.yaml  -f tls.yaml -f auth.yaml -f mrtc.yaml -f pull-policy.yml --wait
-cd -
+# Cache all container images
+./cache-images.sh
+
+# Load cached images (on target machine)
+./load-cached-images.sh
 ```
 
-##### Matrix RTC local setup
+### Check Status
 
-The following values should be used to test Matrix RTC locally.
-
-```yml
-matrixRTC:
-  extraEnv:
-  - name: LIVEKIT_INSECURE_SKIP_VERIFY_TLS
-    value: YES_I_KNOW_WHAT_I_AM_DOING
-  hostAliases:
-  - hostnames:
-    - "{{ $.Values.serverName }}"
-    - "{{ $.Values.matrixRTC.ingress.host }}"
-    - "{{ $.Values.synapse.ingress.host }}"
-    ip: '{{ ( (lookup "v1" "Service" "ingress-nginx" "ingress-nginx-controller") |
-      default (dict "spec" (dict "clusterIP" "127.0.0.1")) ).spec.clusterIP }}'
+**macOS / Linux:**
+```bash
+./verify.sh
 ```
 
-##### Matrix Authentication Service without SMTP server
-
-The following values should be used to test Matrix Authentication Service locally without SMTP.
-
-```yml
-matrixAuthenticationService:
-  image:
-    tag: 1.4.0-rc.1
-  additional:
-    auth.yaml:
-      config: |
-        account:
-          password_registration_enabled: true
-          password_change_allowed: true
-          registration_token_required: true
-          password_registration_email_required: false
+**Windows:**
+```powershell
+.\verify.ps1
 ```
 
-##### Enable local discovery of users
+### View Resources
 
-By default, Synapse only allows users to be searched depending on the rooms they share.
+```bash
+# View all pods
+kubectl get pods -n ess
 
-The following values should be used to enable local discovery of all users.
+# Watch resources interactively with k9s
+k9s -n ess
 
-```yml
-
-synapse:
-  additional:
-    user-directory.yaml:
-      config: |
-        user_directory:
-          enabled: true
-          search_all_users: true
-          prefer_local_users: true
+# View logs
+kubectl logs -n ess -l app.kubernetes.io/name=synapse
 ```
 
-### VPS
+### Cleanup
 
-For VPS, you should follow the ESS Community README.
+**macOS / Linux:**
+```bash
+# Remove Kind cluster only
+./cleanup.sh
+
+# Remove cluster AND uninstall all software
+./cleanup.sh --uninstall
+```
+
+**Windows:**
+```powershell
+# Remove Kind cluster only
+.\cleanup.ps1
+
+# Remove cluster AND uninstall all software
+.\cleanup.ps1 -Uninstall
+```
+
+## 📦 Portable Deployment
+
+This demo is designed to be portable and can be distributed in two ways:
+
+### Option 1: Manual Copy (Traditional)
+
+1. **Download installers** once with internet connection:
+   ```bash
+   ./download-installers.sh --all  # All platforms
+   ```
+
+2. **Cache images** for air-gapped deployment:
+   ```bash
+   ./cache-images.sh -y
+   ```
+
+3. **Verify readiness**:
+   ```bash
+   ./verify-offline.sh
+   ```
+
+4. **Copy entire directory** to USB drive or portable storage
+
+5. **Transfer to any machine** (macOS, Windows, or Linux)
+
+6. **Run setup** - works completely offline!
+   ```bash
+   ./setup.sh  # Offline mode is default
+   ```
+
+### Option 2: Create Distribution Packages (Recommended)
+
+For easier distribution, create platform-specific or universal packages:
+
+```bash
+# Create Linux-only package (~1.4GB)
+./package-offline.sh linux
+
+# Create macOS-only package (~1.6GB)
+./package-offline.sh macos
+
+# Create Windows-only package (~1.6GB)  
+./package-offline.sh windows
+
+# Create all platform-specific packages
+./package-offline.sh --all
+
+# Create one universal package with all platforms (~4.8GB)
+./package-offline.sh --universal
+```
+
+Packages are created in `packages/` directory with SHA256 checksums.
+
+**Distributing packages:**
+
+Each package includes an installer script that automates extraction, verification, and setup:
+
+1. Copy the `.tar.gz`, `.sha256`, and `-install.sh` files to target machine
+2. Run the installer:
+   ```bash
+   chmod +x ess-demo-*-install.sh  # Make executable
+   ./ess-demo-*-install.sh         # Run installer
+   ```
+
+The installer script will:
+- ✓ Verify the package file exists
+- ✓ Check SHA256 checksum integrity
+- ✓ Extract the package
+- ✓ Run offline verification
+- ✓ Offer to run setup immediately
+
+**Manual installation (if preferred):**
+1. Verify: `sha256sum -c ess-demo-*.tar.gz.sha256`
+2. Extract: `tar -xzf ess-demo-*.tar.gz`
+3. Navigate: `cd ess-demo`
+4. Run: `./setup.sh` (Linux/macOS) or `.\setup.ps1` (Windows)
+
+### Directory Structure for Portability
+
+```
+ess-demo/
+├── installers/          # Downloaded binaries (3-4GB with --all)
+│   ├── macos/          # macOS binaries (Intel + Apple Silicon)
+│   ├── linux/          # Linux binaries (x86_64 + ARM64)
+│   └── windows/        # Windows binaries
+├── image-cache/         # Cached container images (3-4GB)
+│   ├── kind-images/    # Kind node image
+│   ├── ess-images/     # ESS component images
+│   └── helm-charts/    # Cached Helm chart
+├── packages/            # Generated distribution packages
+│   ├── ess-demo-linux-*.tar.gz
+│   ├── ess-demo-macos-*.tar.gz
+│   ├── ess-demo-windows-*.tar.gz
+│   └── ess-demo-universal-*.tar.gz
+├── setup.sh            # Setup script (Unix)
+├── setup.ps1           # Setup script (Windows)
+└── ...                 # Other scripts and configs
+```
+
+## � Security Notes
+
+- Uses **mkcert** for local development certificates
+- Certificates are automatically trusted on your machine
+- **Not for production use** - this is a development/demo environment
+- Browser may show certificate warnings on first access (click Advanced → Proceed)
+
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Your Browser                         │
+└────────────────────┬────────────────────────────────────┘
+                     │ HTTPS (mkcert certs)
+                     ↓
+┌─────────────────────────────────────────────────────────┐
+│              NGINX Ingress Controller                   │
+│  ┌──────────┬──────────┬──────────┬──────────┐         │
+│  │ chat.*   │ admin.*  │ matrix.* │ auth.*   │         │
+│  └──────────┴──────────┴──────────┴──────────┘         │
+└────────────────────┬────────────────────────────────────┘
+                     │
+                     ↓
+┌─────────────────────────────────────────────────────────┐
+│           Kind Cluster (ess-demo)                       │
+│                                                         │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
+│  │ Element Web │  │ Element     │  │  Synapse    │    │
+│  │             │  │ Admin       │  │             │    │
+│  └─────────────┘  └─────────────┘  └─────────────┘    │
+│                                                         │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
+│  │ Matrix Auth │  │ Matrix RTC  │  │ PostgreSQL  │    │
+│  │ Service     │  │             │  │             │    │
+│  └─────────────┘  └─────────────┘  └─────────────┘    │
+└─────────────────────────────────────────────────────────┘
+                     │
+                     ↓
+              Docker Desktop/Engine
+```
+
+## � Configuration Files
+
+All configuration is in `demo-values/`:
+
+- `hostnames.yaml` - Domain and hostname configuration (auto-generated)
+- `tls.yaml` - TLS/SSL certificate configuration
+- `auth.yaml` - Authentication service settings
+- `mrtc.yaml` - Matrix RTC configuration
+- `pull-policy.yml` - Image pull policy
+
+## � Troubleshooting
+
+### Docker not running
+**Error:** `Cannot connect to Docker daemon`
+
+**Solution:**
+- **macOS/Windows:** Start Docker Desktop
+- **Linux:** `sudo systemctl start docker`
+
+### Pods not starting
+**Check status:**
+```bash
+kubectl get pods -n ess
+kubectl describe pod <pod-name> -n ess
+kubectl logs <pod-name> -n ess
+```
+
+### Certificate warnings
+- Browser warnings are expected with self-signed certificates
+- Click "Advanced" → "Proceed to site"
+- mkcert certificates are trusted locally but not by other machines
+
+### Port conflicts
+If ports 80/443 are in use:
+```bash
+# Check what's using the ports
+sudo lsof -i :80
+sudo lsof -i :443
+
+# Stop conflicting services
+sudo systemctl stop apache2  # Example for Linux
+```
+
+## 🔄 Reinstalling
+
+To completely reinstall:
+
+```bash
+# 1. Clean up existing installation
+./cleanup.sh
+
+# 2. Run setup again
+./setup.sh
+```
+
+## 📚 Additional Resources
+
+- [ESS Helm Chart](https://github.com/element-hq/ess-helm)
+- [Kind Documentation](https://kind.sigs.k8s.io/)
+- [mkcert GitHub](https://github.com/FiloSottile/mkcert)
+- [kubectl Reference](https://kubernetes.io/docs/reference/kubectl/)
+- [k9s Documentation](https://k9scli.io/)
+
+## 🤝 Support
+
+For issues with:
+- **This demo setup:** Check troubleshooting section above
+- **ESS Community:** [ESS Helm GitHub Issues](https://github.com/element-hq/ess-helm/issues)
+- **Kind:** [Kind GitHub Issues](https://github.com/kubernetes-sigs/kind/issues)
+
+## 📜 License
+
+This demo setup is provided as-is for demonstration purposes.
+
+Element Server Suite (ESS) Community components have their own licenses - please refer to the [ESS Helm repository](https://github.com/element-hq/ess-helm) for details.
+
+---
+
+**Made portable with ❤️ for cross-platform Matrix deployments**
+
 
 ### Explaining the install process
 

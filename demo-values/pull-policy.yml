@@ -3,4 +3,4 @@ image:
 
 synapse:
   image:
-    tag: v1.138.4
+    tag: latest

@@ -1,18 +1,25 @@
 #!/bin/bash
+# Certificate generation script for ESS Community Demo
+# Generates SSL certificates using mkcert for local development
 
 set -euo pipefail
 
 hostnamesFile=$1
-outputDirectory=$2
+outputDirectory=${2:-"./certs"}
 
-admin=$(cat $hostnamesFile | grep "elementAdmin": -A2 | grep "host:" | sed "s/.*host: //")
-chat=$(cat $hostnamesFile | grep "elementWeb": -A2 | grep "host:" | sed "s/.*host: //")
-synapse=$(cat $hostnamesFile | grep "synapse": -A2 | grep "host:" | sed "s/.*host: //")
-auth=$(cat $hostnamesFile | grep "matrixAuthenticationService": -A2 | grep "host:" | sed "s/.*host: //")
-mrtc=$(cat $hostnamesFile | grep "matrixRTC": -A2 | grep "host:" | sed "s/.*host: //")
-servername=$(cat $hostnamesFile | grep "serverName": | sed "s/.*serverName: //")
+# Extract hostnames from YAML config
+admin=$(grep -A2 "elementAdmin:" "$hostnamesFile" | grep "host:" | sed "s/.*host: //" | tr -d ' ')
+chat=$(grep -A2 "elementWeb:" "$hostnamesFile" | grep "host:" | sed "s/.*host: //" | tr -d ' ')
+synapse=$(grep -A2 "synapse:" "$hostnamesFile" | grep "host:" | sed "s/.*host: //" | tr -d ' ')
+auth=$(grep -A2 "matrixAuthenticationService:" "$hostnamesFile" | grep "host:" | sed "s/.*host: //" | tr -d ' ')
+mrtc=$(grep -A2 "matrixRTC:" "$hostnamesFile" | grep "host:" | sed "s/.*host: //" | tr -d ' ')
+servername=$(grep "serverName:" "$hostnamesFile" | sed "s/.*serverName: //" | tr -d ' ')
 
-mkcert -install
+# Ensure mkcert CA is installed
+if ! mkcert -CAROOT >/dev/null 2>&1; then
+    echo "Installing mkcert CA..."
+    mkcert -install
+fi
 
 mkdir -p "$outputDirectory"
 cd "$outputDirectory"
