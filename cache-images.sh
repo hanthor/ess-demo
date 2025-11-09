@@ -48,43 +48,22 @@ print_header() {
     echo ""
 }
 
-# Check if Docker is running
-check_docker() {
-    if ! command -v docker >/dev/null 2>&1; then
-        print_error "Docker is not installed"
-        print_info "Please install Docker first"
-        exit 1
-    fi
-    
-    if ! docker info >/dev/null 2>&1; then
-        print_error "Docker is not running"
-        print_info "Please start Docker and try again"
-        exit 1
-    fi
-    
-    print_success "Docker is running"
-}
-
 # Check if skopeo is available
 check_skopeo() {
     if command -v skopeo >/dev/null 2>&1; then
-        return 0
+        print_success "skopeo is installed"
     else
-        return 1
+        print_error "skopeo is not installed"
+        print_info "Please install skopeo first"
+        exit 1
     fi
 }
 
-# Get remote image digest using skopeo or docker
+# Get remote image digest using skopeo
 get_remote_digest() {
     local image="$1"
     
-    if check_skopeo; then
-        # Use skopeo for faster, pull-free inspection
-        skopeo inspect "docker://${image}" 2>/dev/null | grep -o '"Digest":"sha256:[^"]*"' | cut -d'"' -f4 || echo ""
-    else
-        # Fallback to docker inspect (requires pulling manifest)
-        docker manifest inspect "${image}" 2>/dev/null | grep -o '"digest":"sha256:[^"]*"' | head -1 | cut -d'"' -f4 || echo ""
-    fi
+    skopeo inspect "docker://${image}" 2>/dev/null | grep -o '"Digest":"sha256:[^"]*"' | cut -d'"' -f4 || echo ""
 }
 
 # Get local cached image digest
@@ -174,16 +153,13 @@ download_kind_image() {
         fi
     fi
     
-    print_info "Pulling Kind node image: $KIND_NODE_IMAGE"
+    print_info "Downloading Kind node image: $KIND_NODE_IMAGE"
     print_warning "This is a large image (~400MB), please wait..."
     
-    docker pull "$KIND_NODE_IMAGE"
+    skopeo copy "docker://${KIND_NODE_IMAGE}" "docker-archive:${IMAGE_FILE}"
     
     # Get digest and save
     local digest=$(get_remote_digest "$KIND_NODE_IMAGE")
-    
-    print_info "Saving image to: $IMAGE_FILE"
-    docker save -o "$IMAGE_FILE" "$KIND_NODE_IMAGE"
     
     if [ -n "$digest" ]; then
         save_digest "$IMAGE_FILE" "$digest"
@@ -213,19 +189,16 @@ pull_helm_chart() {
     if [ -d "$CHART_DIR" ] || ls "${HELM_CACHE_DIR}"/${CHART_NAME}-*.tgz >/dev/null 2>&1; then
         print_info "Helm chart found in cache"
         
-        # Check for updates using skopeo
-        if check_skopeo; then
-            print_info "Checking for chart updates..."
-            local remote_digest=$(get_remote_digest "ghcr.io/element-hq/ess-helm/matrix-stack")
-            local cached_digest=$(get_cached_digest "${CHART_DIR}")
-            
-            if [ -n "$remote_digest" ] && [ -n "$cached_digest" ] && [ "$remote_digest" = "$cached_digest" ]; then
-                local chart_version=$(ls -t "${HELM_CACHE_DIR}"/${CHART_NAME}-*.tgz 2>/dev/null | head -1 | sed 's/.*matrix-stack-\(.*\)\.tgz/\1/' || echo "unknown")
-                print_success "Using cached Helm chart v${chart_version}"
-                return 0
-            elif [ -n "$remote_digest" ] && [ "$remote_digest" != "$cached_digest" ]; then
-                print_info "New chart version available, updating..."
-            fi
+        print_info "Checking for chart updates..."
+        local remote_digest=$(get_remote_digest "ghcr.io/element-hq/ess-helm/matrix-stack")
+        local cached_digest=$(get_cached_digest "${CHART_DIR}")
+        
+        if [ -n "$remote_digest" ] && [ -n "$cached_digest" ] && [ "$remote_digest" = "$cached_digest" ]; then
+            local chart_version=$(ls -t "${HELM_CACHE_DIR}"/${CHART_NAME}-*.tgz 2>/dev/null | head -1 | sed 's/.*matrix-stack-\(.*\)\.tgz/\1/' || echo "unknown")
+            print_success "Using cached Helm chart v${chart_version}"
+            return 0
+        elif [ -n "$remote_digest" ] && [ "$remote_digest" != "$cached_digest" ]; then
+            print_info "New chart version available, updating..."
         fi
         
         print_info "Removing existing chart..."
@@ -242,13 +215,11 @@ pull_helm_chart() {
     # Also save as tarball
     helm pull "${CHART_REPO}/${CHART_NAME}" -d "$HELM_CACHE_DIR"
     
-    # Save digest if we can get it
-    if check_skopeo; then
-        local digest=$(get_remote_digest "ghcr.io/element-hq/ess-helm/matrix-stack")
-        if [ -n "$digest" ]; then
-            save_digest "$CHART_DIR" "$digest"
-            print_info "Saved chart digest: ${digest:0:19}..."
-        fi
+    # Save digest
+    local digest=$(get_remote_digest "ghcr.io/element-hq/ess-helm/matrix-stack")
+    if [ -n "$digest" ]; then
+        save_digest "$CHART_DIR" "$digest"
+        print_info "Saved chart digest: ${digest:0:19}..."
     fi
     
     print_success "Helm chart cached"
@@ -374,22 +345,17 @@ cache_ess_images() {
             fi
         fi
         
-        # Pull image
-        if docker pull "$image" 2>/dev/null; then
-            # Get digest and save
-            local digest=$(get_remote_digest "$image")
-            
-            # Save image
-            docker save -o "$image_file" "$image"
-            
-            if [ -n "$digest" ]; then
-                save_digest "$image_file" "$digest"
-            fi
-            
-            print_success "  Cached: $(du -h "$image_file" | cut -f1)"
-        else
-            print_warning "  Failed to pull: $image (may not exist or network issue)"
+        # Pull and save image
+        skopeo copy "docker://${image}" "docker-archive:${image_file}"
+        
+        # Get digest and save
+        local digest=$(get_remote_digest "$image")
+        
+        if [ -n "$digest" ]; then
+            save_digest "$image_file" "$digest"
         fi
+        
+        print_success "  Cached: $(du -h "$image_file" | cut -f1)"
         echo ""
     done
     
@@ -422,20 +388,16 @@ cache_nginx_ingress() {
             fi
         fi
         
-        if docker pull "$image"; then
-            # Get digest and save
-            local digest=$(get_remote_digest "$image")
-            
-            docker save -o "$image_file" "$image"
-            
-            if [ -n "$digest" ]; then
-                save_digest "$image_file" "$digest"
-            fi
-            
-            print_success "Cached: $(du -h "$image_file" | cut -f1)"
-        else
-            print_warning "Failed to pull: $image"
+        skopeo copy "docker://${image}" "docker-archive:${image_file}"
+        
+        # Get digest and save
+        local digest=$(get_remote_digest "$image")
+        
+        if [ -n "$digest" ]; then
+            save_digest "$image_file" "$digest"
         fi
+        
+        print_success "Cached: $(du -h "$image_file" | cut -f1)"
     done
 }
 
@@ -574,17 +536,7 @@ main() {
     echo "  • NGINX Ingress images (~200MB)"
     echo ""
     print_warning "Total download: ~3-4GB"
-    print_warning "Requires Docker to be running"
-    echo ""
-    
-    # Check for skopeo
-    if check_skopeo; then
-        print_success "skopeo detected - will perform smart version checking"
-        print_info "Only new/updated images will be downloaded"
-    else
-        print_info "skopeo not found - will cache all images"
-        print_info "Install skopeo for faster version checking (optional)"
-    fi
+    print_warning "Requires skopeo to be installed"
     echo ""
     
     # Confirmation prompt (skip if -y flag is used)
@@ -598,7 +550,7 @@ main() {
     fi
     
     # Execute caching steps
-    check_docker
+    check_skopeo
     create_cache_dirs
     download_kind_image
     pull_helm_chart

@@ -1,2 +1,57 @@
+# Generated certificates
+certs/
 *.pem
+*.crt
+*.key
+
+# Image cache (very large, regenerate with cache-images.sh)
+image-cache/
+*.tar
+
+# Generated packages (created by package-offline.sh)
+packages/
+
+# Package staging directory (temporary)
+.package-staging-*/
+
+# Installer downloads (too large for git)
+installers/**/*.tar.gz
+installers/**/*.zip
+installers/**/*.exe
+installers/**/*.msi
+installers/**/*.dmg
+installers/**/*.pkg
+installers/**/*.deb
+installers/**/*.rpm
+installers/**/*.tgz
+
+# Keep installer directory structure
+!installers/.gitignore
+!installers/README.md
+
+# Demo values (may contain custom config)
 demo-values/ess.yaml
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+
+# Logs
+*.log
+
+# OS-specific
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Desktop.ini
+
+packages/
