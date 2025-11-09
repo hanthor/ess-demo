@@ -93,18 +93,26 @@ main() {
     print_info "Verifying offline deployment components..."
     echo ""
     
-    # Check Docker
-    print_header "Docker Availability"
-    if command -v docker >/dev/null 2>&1; then
-        if docker info >/dev/null 2>&1; then
-            print_success "Docker is installed and running"
+    # Check container runtime (Docker or Podman)
+    print_header "Container Runtime Availability"
+    if command -v detect_container_runtime >/dev/null 2>&1; then
+        RUNTIME=$(detect_container_runtime || true)
+        if [ -z "${RUNTIME:-}" ]; then
+            print_error "No container runtime detected (Docker or Podman)"
+            print_info "Either Docker or Podman is required for offline deployment"
         else
-            print_error "Docker is installed but not running"
-            print_info "Please start Docker before running setup"
+            print_success "Detected container runtime: ${RUNTIME}"
         fi
     else
-        print_error "Docker is not installed"
-        print_info "Docker is required for offline deployment"
+        # Fallback checks
+        if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+            print_success "Docker is installed and running"
+        elif command -v podman >/dev/null 2>&1 && (podman info >/dev/null 2>&1 || sudo podman info >/dev/null 2>&1); then
+            print_success "Podman is installed and running (rootless or rootful)"
+        else
+            print_error "Neither Docker nor Podman is installed or running"
+            print_info "Either Docker or Podman is required for offline deployment"
+        fi
     fi
     
     # Check installers

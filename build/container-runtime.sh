@@ -6,15 +6,32 @@
 set -euo pipefail
 
 # Detect available container runtime
-# Returns: docker, podman, or empty string if neither found
+# Returns: docker, podman, podman-rootful, or empty string if neither found
+# Prefers rootful podman if available (for privileged port access)
 detect_container_runtime() {
+    # Check for rootful podman first (requires sudo but can bind privileged ports)
+    if command -v podman >/dev/null 2>&1 && sudo podman info >/dev/null 2>&1; then
+        if sudo podman info 2>/dev/null | grep -q "rootless: false"; then
+            echo "podman-rootful"
+            return 0
+        fi
+    fi
+    
+    # Fall back to regular podman (rootless)
+    if command -v podman >/dev/null 2>&1; then
+        echo "podman"
+        return 0
+    fi
+    
+    # Fall back to docker
     if command -v docker >/dev/null 2>&1; then
         echo "docker"
-    elif command -v podman >/dev/null 2>&1; then
-        echo "podman"
-    else
-        echo ""
+        return 0
     fi
+    
+    # No container runtime found
+    echo ""
+    return 1
 }
 
 # Get the container runtime to use (prefer docker, fallback to podman)
@@ -41,8 +58,12 @@ container_load_image() {
         docker)
             docker load -i "$image_file"
             ;;
-        podman)
-            podman load -i "$image_file"
+        podman|podman-rootful)
+            if [ "$runtime" = "podman-rootful" ]; then
+                sudo podman load -i "$image_file"
+            else
+                podman load -i "$image_file"
+            fi
             ;;
         *)
             echo "ERROR: Unknown container runtime: $runtime" >&2
@@ -68,12 +89,14 @@ container_kind_create() {
             # Docker is the default for Kind
             kind create cluster --name "$cluster_name" $additional_args
             ;;
+        podman-rootful)
+            # Rootful Podman: set KIND_EXPERIMENTAL_PROVIDER and use sudo
+            sudo -E KIND_EXPERIMENTAL_PROVIDER=podman kind create cluster --name "$cluster_name" $additional_args
+            ;;
         podman)
-            # Podman requires special flags for Kind
-            kind create cluster --name "$cluster_name" \
-                --provider podman \
-                -v 2 \
-                $additional_args
+            # Rootless Podman: set KIND_EXPERIMENTAL_PROVIDER environment variable for older Kind versions
+            # For newer Kind versions (0.22.0+) it auto-detects
+            KIND_EXPERIMENTAL_PROVIDER=podman kind create cluster --name "$cluster_name" $additional_args
             ;;
         *)
             echo "ERROR: Unknown container runtime: $runtime" >&2
@@ -96,9 +119,13 @@ container_kind_delete() {
         docker)
             kind delete cluster --name "$cluster_name"
             ;;
+        podman-rootful)
+            # Rootful Podman: set KIND_EXPERIMENTAL_PROVIDER and use sudo
+            sudo -E KIND_EXPERIMENTAL_PROVIDER=podman kind delete cluster --name "$cluster_name"
+            ;;
         podman)
-            # Podman requires special flags for Kind
-            kind delete cluster --name "$cluster_name" --provider podman
+            # Rootless Podman: set KIND_EXPERIMENTAL_PROVIDER environment variable for older Kind versions
+            KIND_EXPERIMENTAL_PROVIDER=podman kind delete cluster --name "$cluster_name"
             ;;
         *)
             echo "ERROR: Unknown container runtime: $runtime" >&2

@@ -1,43 +1,44 @@
 #!/bin/bash
-# Load cached images into Docker or Podman
+# Load cached images into Docker or Podman (runtime autodetected)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CACHE_DIR="${SCRIPT_DIR}/image-cache"
 
-# Source container runtime utilities
-source "${SCRIPT_DIR}/container-runtime.sh"
-
-# Detect container runtime
-CONTAINER_RUNTIME=$(detect_container_runtime)
-if [ -z "$CONTAINER_RUNTIME" ]; then
-    echo "✗ Error: No container runtime found. Install Docker or Podman."
-    exit 1
+# Try to source runtime helper if available
+if [ -f "${SCRIPT_DIR}/../build/container-runtime.sh" ]; then
+    source "${SCRIPT_DIR}/../build/container-runtime.sh"
 fi
 
-echo "Using container runtime: $CONTAINER_RUNTIME"
-echo "Loading cached images into ${CONTAINER_RUNTIME}..."
-echo ""
+RUNTIME="docker"
+if command -v detect_container_runtime >/dev/null 2>&1; then
+    RUNTIME=$(detect_container_runtime)
+fi
+
+echo "Loading cached images into ${RUNTIME}..."
 
 # Load Kind images
-if [ -d "${CACHE_DIR}/kind-images" ]; then
-    for img in "${CACHE_DIR}/kind-images"/*.tar; do
-        if [ -f "$img" ]; then
-            echo "Loading: $(basename "$img")"
-            container_load_image "$img" "$CONTAINER_RUNTIME"
+for img in "${CACHE_DIR}/kind-images"/*.tar; do
+    if [ -f "$img" ]; then
+        echo "Loading: $(basename "$img")"
+        if command -v container_load_image >/dev/null 2>&1; then
+            container_load_image "$img" "$RUNTIME"
+        else
+            ${RUNTIME} load -i "$img"
         fi
-    done
-fi
+    fi
+done
 
 # Load ESS images
-if [ -d "${CACHE_DIR}/ess-images" ]; then
-    for img in "${CACHE_DIR}/ess-images"/*.tar; do
-        if [ -f "$img" ]; then
-            echo "Loading: $(basename "$img")"
-            container_load_image "$img" "$CONTAINER_RUNTIME"
+for img in "${CACHE_DIR}/ess-images"/*.tar; do
+    if [ -f "$img" ]; then
+        echo "Loading: $(basename "$img")"
+        if command -v container_load_image >/dev/null 2>&1; then
+            container_load_image "$img" "$RUNTIME"
+        else
+            ${RUNTIME} load -i "$img"
         fi
-    done
-fi
+    fi
+done
 
-echo ""
-echo "✓ All cached images loaded into ${CONTAINER_RUNTIME}"
+echo "✓ All cached images loaded into ${RUNTIME}"

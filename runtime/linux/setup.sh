@@ -8,6 +8,7 @@ set -euo pipefail
 # Offline mode flag - now defaults to true
 OFFLINE_MODE=true
 USE_CACHED_IMAGES=false
+DOMAIN_NAME=""
 
 # Colors for output
 RED='\033[0;31m'
@@ -20,6 +21,20 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALLERS_DIR="${SCRIPT_DIR}/installers"
 IMAGE_CACHE_DIR="${SCRIPT_DIR}/image-cache"
+
+# Source container runtime utilities (detects docker or podman)
+if [ -f "${SCRIPT_DIR}/../build/container-runtime.sh" ]; then
+    # build scripts live in build/, runtime scripts are in runtime/
+    source "${SCRIPT_DIR}/../build/container-runtime.sh"
+elif [ -f "${SCRIPT_DIR}/build/container-runtime.sh" ]; then
+    source "${SCRIPT_DIR}/build/container-runtime.sh"
+fi
+
+# Determine container runtime to use (docker or podman)
+CONTAINER_RUNTIME=""
+if command -v detect_container_runtime >/dev/null 2>&1; then
+    CONTAINER_RUNTIME=$(detect_container_runtime)
+fi
 
 # Function to print colored messages
 print_info() {
@@ -90,29 +105,37 @@ load_cached_images() {
     
     print_header "Loading Cached Images"
     
-    print_info "Found cached images, loading into Docker..."
-    
+    print_info "Found cached images, loading into ${CONTAINER_RUNTIME:-docker}..."
+
     # Load Kind images
     if [ -d "${IMAGE_CACHE_DIR}/kind-images" ]; then
         for img in "${IMAGE_CACHE_DIR}/kind-images"/*.tar; do
             if [ -f "$img" ]; then
                 print_info "Loading: $(basename "$img")"
-                docker load -i "$img"
+                if command -v container_load_image >/dev/null 2>&1; then
+                    container_load_image "$img" "${CONTAINER_RUNTIME}"
+                else
+                    ${CONTAINER_RUNTIME:-docker} load -i "$img"
+                fi
             fi
         done
     fi
-    
+
     # Load ESS images
     if [ -d "${IMAGE_CACHE_DIR}/ess-images" ]; then
         for img in "${IMAGE_CACHE_DIR}/ess-images"/*.tar; do
             if [ -f "$img" ]; then
                 print_info "Loading: $(basename "$img")"
-                docker load -i "$img"
+                if command -v container_load_image >/dev/null 2>&1; then
+                    container_load_image "$img" "${CONTAINER_RUNTIME}"
+                else
+                    ${CONTAINER_RUNTIME:-docker} load -i "$img"
+                fi
             fi
         done
     fi
-    
-    print_success "Cached images loaded"
+
+    print_success "Cached images loaded into ${CONTAINER_RUNTIME:-docker}"
     USE_CACHED_IMAGES=true
 }
 
@@ -125,9 +148,27 @@ command_exists() {
 install_docker() {
     print_header "Installing Docker"
     
-    if command_exists docker; then
-        print_success "Docker already installed: $(docker --version)"
+    # Check if Docker is actually working (not just present)
+    if command_exists docker && docker info >/dev/null 2>&1; then
+        print_success "Docker already installed and running: $(docker --version)"
         return 0
+    fi
+    
+    # Check if Podman (rootful or rootless) or Docker is available - prefer detected runtime
+    if command -v detect_container_runtime >/dev/null 2>&1; then
+        RUNTIME=$(detect_container_runtime || true)
+        if [ -n "${RUNTIME:-}" ] && [ "${RUNTIME}" != "docker" ]; then
+            print_success "Container runtime detected: ${RUNTIME}"
+            print_info "Skipping Docker installation (using ${RUNTIME} instead)"
+            return 0
+        fi
+    else
+        # Fallback: check podman (rootful or rootless)
+        if command_exists podman && (podman info >/dev/null 2>&1 || sudo podman info >/dev/null 2>&1); then
+            print_success "Podman is already available and running"
+            print_info "Skipping Docker installation (using Podman instead)"
+            return 0
+        fi
     fi
     
     if [ "$OS" = "macos" ]; then
@@ -161,6 +202,9 @@ install_docker() {
         # Linux - Install from downloaded package
         if [ -f "${INSTALLERS_DIR}/linux/docker.tgz" ]; then
             print_info "Installing Docker from local package..."
+            
+            # Clean up any broken Docker installation first
+            rm -f /usr/local/bin/docker* 2>/dev/null || true
             
             # Extract and install Docker binaries
             tar xzvf "${INSTALLERS_DIR}/linux/docker.tgz" -C /tmp
@@ -312,7 +356,11 @@ create_kind_cluster() {
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             print_info "Deleting existing cluster..."
-            kind delete cluster --name "$CLUSTER_NAME"
+            if command -v container_kind_delete >/dev/null 2>&1; then
+                container_kind_delete "$CLUSTER_NAME" "${CONTAINER_RUNTIME}"
+            else
+                kind delete cluster --name "$CLUSTER_NAME"
+            fi
         else
             print_info "Using existing cluster"
             return 0
@@ -322,11 +370,26 @@ create_kind_cluster() {
     # Create Kind config with optional cached image
     local KIND_CONFIG="/tmp/kind-config.yaml"
     
-    if [ "$USE_CACHED_IMAGES" = true ] && [ -f "${IMAGE_CACHE_DIR}/kind-images/kind-node-"*.tar ]; then
-        # Use cached Kind node image
-        local CACHED_IMAGE=$(docker images kindest/node --format "{{.Repository}}:{{.Tag}}" | head -1)
-        print_info "Using cached Kind node image: $CACHED_IMAGE"
-        
+    # Always use standard ports (80, 443) - rootful podman can bind them
+    local HTTP_PORT=80
+    local HTTPS_PORT=443
+    
+    # Initialize CACHED_IMAGE
+    local CACHED_IMAGE=""
+    
+    if [ "$USE_CACHED_IMAGES" = true ] && ls ${IMAGE_CACHE_DIR}/kind-images/kind-node-*.tar >/dev/null 2>&1; then
+        # Use cached Kind node image - extract version from filename
+        local KIND_IMAGE_FILE=$(ls -1 "${IMAGE_CACHE_DIR}/kind-images/kind-node-"*.tar 2>/dev/null | head -1)
+        if [ -n "$KIND_IMAGE_FILE" ]; then
+            # Extract version from filename (e.g., kind-node-v1.28.0.tar -> v1.28.0)
+            local KIND_VERSION=$(basename "$KIND_IMAGE_FILE" | sed 's/kind-node-\(.*\)\.tar$/\1/')
+            CACHED_IMAGE="kindest/node:${KIND_VERSION}"
+            print_info "Using cached Kind node image: $CACHED_IMAGE (from $KIND_IMAGE_FILE)"
+        fi
+    fi
+    
+    # Generate Kind config based on whether we have a cached image
+    if [ -n "$CACHED_IMAGE" ]; then
         cat > "$KIND_CONFIG" <<EOF
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
@@ -341,10 +404,10 @@ nodes:
         node-labels: "ingress-ready=true"
   extraPortMappings:
   - containerPort: 80
-    hostPort: 80
+    hostPort: ${HTTP_PORT}
     protocol: TCP
   - containerPort: 443
-    hostPort: 443
+    hostPort: ${HTTPS_PORT}
     protocol: TCP
 EOF
     else
@@ -362,16 +425,20 @@ nodes:
         node-labels: "ingress-ready=true"
   extraPortMappings:
   - containerPort: 80
-    hostPort: 80
+    hostPort: ${HTTP_PORT}
     protocol: TCP
   - containerPort: 443
-    hostPort: 443
+    hostPort: ${HTTPS_PORT}
     protocol: TCP
 EOF
     fi
     
-    print_info "Creating Kind cluster '${CLUSTER_NAME}'..."
-    kind create cluster --name "$CLUSTER_NAME" --config "$KIND_CONFIG"
+    print_info "Creating Kind cluster '${CLUSTER_NAME}' using runtime: ${CONTAINER_RUNTIME:-docker}"
+    if command -v container_kind_create >/dev/null 2>&1; then
+        container_kind_create "$CLUSTER_NAME" "${CONTAINER_RUNTIME}" --config "$KIND_CONFIG"
+    else
+        kind create cluster --name "$CLUSTER_NAME" --config "$KIND_CONFIG"
+    fi
     
     # Set context
     kubectl cluster-info --context "kind-${CLUSTER_NAME}"
@@ -383,21 +450,73 @@ EOF
 install_nginx_ingress() {
     print_header "Installing NGINX Ingress Controller"
     
-    print_info "Applying NGINX Ingress manifests..."
-    kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+    local CLUSTER_NAME="ess-demo"
     
-    print_info "Waiting for NGINX Ingress to be ready..."
-    kubectl wait --namespace ingress-nginx \
-        --for=condition=ready pod \
-        --selector=app.kubernetes.io/component=controller \
-        --timeout=90s
+    # Try to use Helm first (if available and charts are cached)
+    if command_exists helm && [ -f "${IMAGE_CACHE_DIR}/helm-charts/ingress-nginx-"*.tgz ]; then
+        print_info "Installing NGINX Ingress via Helm (cached chart)..."
+        local INGRESS_CHART=$(ls -1 "${IMAGE_CACHE_DIR}/helm-charts/ingress-nginx-"*.tgz 2>/dev/null | head -1)
+        if [ -n "$INGRESS_CHART" ]; then
+            helm upgrade -i ingress-nginx "$INGRESS_CHART" \
+                --namespace ingress-nginx \
+                --create-namespace \
+                --kube-context "kind-${CLUSTER_NAME}" \
+                --set controller.service.type=NodePort \
+                --set controller.hostNetwork=true || true
+        fi
+    fi
     
-    print_success "NGINX Ingress Controller ready"
+    # Fall back to kubectl apply with offline manifest (try cached, then URL)
+    if ! kubectl get deployment -n ingress-nginx ingress-nginx-controller >/dev/null 2>&1; then
+        print_info "Installing NGINX Ingress via kubectl..."
+        
+        # Try to load from cached manifest if available
+        local NGINX_MANIFEST="${IMAGE_CACHE_DIR}/../demo-values/nginx-kind-deploy.yaml"
+        if [ -f "$NGINX_MANIFEST" ]; then
+            kubectl apply -f "$NGINX_MANIFEST" || true
+        else
+            # Fall back to online deployment (requires network)
+            print_warning "NGINX manifest not cached, attempting to fetch from internet..."
+            kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml || \
+                { print_error "Failed to fetch NGINX manifest from internet"; return 1; }
+        fi
+    fi
+    
+    # Wait for NGINX deployment to be ready
+    print_info "Waiting for NGINX Ingress Controller to be ready (this may take 1-2 minutes)..."
+    
+    # First, wait for the deployment to exist
+    local max_attempts=30
+    local attempt=0
+    while [ $attempt -lt $max_attempts ]; do
+        if kubectl get deployment -n ingress-nginx ingress-nginx-controller >/dev/null 2>&1; then
+            break
+        fi
+        sleep 2
+        ((attempt++))
+    done
+    
+    if [ $attempt -eq $max_attempts ]; then
+        print_warning "NGINX deployment not found after ${max_attempts} attempts"
+    fi
+    
+    # Now wait for the deployment to be available
+    kubectl rollout status deployment/ingress-nginx-controller \
+        -n ingress-nginx \
+        --timeout=120s || print_warning "NGINX Ingress installation may still be in progress"
+    
+    print_success "NGINX Ingress Controller installation complete"
 }
 
 # Prompt for domain name
 prompt_domain() {
     print_header "Domain Configuration"
+    
+    # If domain was provided via command line argument, skip prompt
+    if [ -n "$DOMAIN_NAME" ]; then
+        print_success "Using domain: $DOMAIN_NAME"
+        return 0
+    fi
     
     echo ""
     print_info "Enter the base domain name for your ESS deployment"
@@ -415,7 +534,6 @@ prompt_domain() {
     
     print_success "Using domain: $DOMAIN_NAME"
 }
-
 # Generate hostnames configuration
 generate_hostnames_config() {
     print_header "Generating Configuration Files"
@@ -444,16 +562,100 @@ EOF
 
 # Generate certificates
 generate_certificates() {
-    print_header "Generating SSL Certificates"
+    print_header "Generating SSL Certificates with mkcert"
     
     # Create namespace
     kubectl create namespace ess --dry-run=client -o yaml | kubectl apply -f -
     
-    # Run the certificate generation script
-    print_info "Running certificate generation..."
-    bash "${SCRIPT_DIR}/build-certs.sh" "${SCRIPT_DIR}/demo-values/hostnames.yaml" "${SCRIPT_DIR}/certs"
+    # Extract hostnames from the domain
+    local ADMIN_HOST="admin.${DOMAIN_NAME}"
+    local CHAT_HOST="chat.${DOMAIN_NAME}"
+    local AUTH_HOST="auth.${DOMAIN_NAME}"
+    local MRTC_HOST="mrtc.${DOMAIN_NAME}"
+    local MATRIX_HOST="matrix.${DOMAIN_NAME}"
+    local WK_HOST="${DOMAIN_NAME}"
     
-    print_success "Certificates generated and secrets created"
+    # Create certs directory if it doesn't exist
+    mkdir -p "${SCRIPT_DIR}/certs"
+    
+    print_info "Generating certificates for domain: ${DOMAIN_NAME}"
+    
+    # Generate certificate for admin
+    print_info "  • Generating admin.${DOMAIN_NAME} certificate..."
+    mkcert -cert-file "${SCRIPT_DIR}/certs/admin-cert.pem" \
+           -key-file "${SCRIPT_DIR}/certs/admin-key.pem" \
+           "${ADMIN_HOST}" 2>/dev/null || print_warning "mkcert may need to be installed"
+    
+    # Generate certificate for chat
+    print_info "  • Generating chat.${DOMAIN_NAME} certificate..."
+    mkcert -cert-file "${SCRIPT_DIR}/certs/chat-cert.pem" \
+           -key-file "${SCRIPT_DIR}/certs/chat-key.pem" \
+           "${CHAT_HOST}"
+    
+    # Generate certificate for auth
+    print_info "  • Generating auth.${DOMAIN_NAME} certificate..."
+    mkcert -cert-file "${SCRIPT_DIR}/certs/auth-cert.pem" \
+           -key-file "${SCRIPT_DIR}/certs/auth-key.pem" \
+           "${AUTH_HOST}"
+    
+    # Generate certificate for mrtc
+    print_info "  • Generating mrtc.${DOMAIN_NAME} certificate..."
+    mkcert -cert-file "${SCRIPT_DIR}/certs/mrtc-cert.pem" \
+           -key-file "${SCRIPT_DIR}/certs/mrtc-key.pem" \
+           "${MRTC_HOST}"
+    
+    # Generate certificate for matrix
+    print_info "  • Generating matrix.${DOMAIN_NAME} certificate..."
+    mkcert -cert-file "${SCRIPT_DIR}/certs/matrix-cert.pem" \
+           -key-file "${SCRIPT_DIR}/certs/matrix-key.pem" \
+           "${MATRIX_HOST}"
+    
+    # Generate certificate for well-known
+    print_info "  • Generating ${DOMAIN_NAME} certificate..."
+    mkcert -cert-file "${SCRIPT_DIR}/certs/well-known-cert.pem" \
+           -key-file "${SCRIPT_DIR}/certs/well-known-key.pem" \
+           "${WK_HOST}"
+    
+    # Create Kubernetes secrets from the certificates
+    print_info "Creating Kubernetes secrets in 'ess' namespace..."
+    
+    # Create admin certificate secret
+    kubectl create secret tls ess-admin-certificate \
+        --cert="${SCRIPT_DIR}/certs/admin-cert.pem" \
+        --key="${SCRIPT_DIR}/certs/admin-key.pem" \
+        -n ess --dry-run=client -o yaml | kubectl apply -f -
+    
+    # Create chat certificate secret
+    kubectl create secret tls ess-chat-certificate \
+        --cert="${SCRIPT_DIR}/certs/chat-cert.pem" \
+        --key="${SCRIPT_DIR}/certs/chat-key.pem" \
+        -n ess --dry-run=client -o yaml | kubectl apply -f -
+    
+    # Create auth certificate secret
+    kubectl create secret tls ess-auth-certificate \
+        --cert="${SCRIPT_DIR}/certs/auth-cert.pem" \
+        --key="${SCRIPT_DIR}/certs/auth-key.pem" \
+        -n ess --dry-run=client -o yaml | kubectl apply -f -
+    
+    # Create mrtc certificate secret
+    kubectl create secret tls ess-mrtc-certificate \
+        --cert="${SCRIPT_DIR}/certs/mrtc-cert.pem" \
+        --key="${SCRIPT_DIR}/certs/mrtc-key.pem" \
+        -n ess --dry-run=client -o yaml | kubectl apply -f -
+    
+    # Create matrix certificate secret
+    kubectl create secret tls ess-matrix-certificate \
+        --cert="${SCRIPT_DIR}/certs/matrix-cert.pem" \
+        --key="${SCRIPT_DIR}/certs/matrix-key.pem" \
+        -n ess --dry-run=client -o yaml | kubectl apply -f -
+    
+    # Create well-known certificate secret
+    kubectl create secret tls ess-well-known-certificate \
+        --cert="${SCRIPT_DIR}/certs/well-known-cert.pem" \
+        --key="${SCRIPT_DIR}/certs/well-known-key.pem" \
+        -n ess --dry-run=client -o yaml | kubectl apply -f -
+    
+    print_success "SSL certificates generated and Kubernetes secrets created"
 }
 
 # Deploy ESS
@@ -582,13 +784,27 @@ main() {
                 OFFLINE_MODE=true
                 shift
                 ;;
+            --domain)
+                if [ -z "${2:-}" ]; then
+                    print_error "Domain name required for --domain option"
+                    exit 1
+                fi
+                DOMAIN_NAME="$2"
+                shift 2
+                ;;
             --help|-h)
                 echo "Usage: $0 [OPTIONS]"
                 echo ""
                 echo "Options:"
-                echo "  --online      Pull images from internet (default is offline mode)"
-                echo "  --offline     Use cached images (default, requires cache-images.sh)"
-                echo "  --help, -h    Show this help message"
+                echo "  --online           Pull images from internet (default is offline mode)"
+                echo "  --offline          Use cached images (default, requires cache-images.sh)"
+                echo "  --domain <name>    Set domain name (e.g., ess.localhost) for non-interactive setup"
+                echo "  --help, -h         Show this help message"
+                echo ""
+                echo "Examples:"
+                echo "  $0 --offline"
+                echo "  $0 --offline --domain ess.localhost"
+                echo "  $0 --online --domain demo.example.com"
                 echo ""
                 exit 0
                 ;;
@@ -610,13 +826,15 @@ main() {
         exit 1
     fi
     
+    # Install Docker first (needed for loading images)
+    install_docker
+    
     # Load cached images if in offline mode or if cache exists
     if [ "$OFFLINE_MODE" = true ] || [ -d "$IMAGE_CACHE_DIR" ]; then
         load_cached_images
     fi
     
-    # Install dependencies
-    install_docker
+    # Install remaining dependencies
     install_kind
     install_kubectl
     install_helm
@@ -624,27 +842,6 @@ main() {
     install_mkcert
     
     # Prompt for domain
-    prompt_domain
-    
-    # Generate configuration
-    generate_hostnames_config
-    
-    # Setup Kubernetes
-    create_kind_cluster
-    install_nginx_ingress
-    
-    # Generate certificates
-    generate_certificates
-    
-    # Deploy ESS
-    deploy_ess
-    
-    # Show access information
-    show_access_info
-}
-
-# Run main function
-main "$@"
     prompt_domain
     
     # Generate configuration

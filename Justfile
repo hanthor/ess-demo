@@ -206,18 +206,39 @@ KIND_NODE_VERSION := "v1.28.0"
     fi
 
 @update-helm:
+    #!/usr/bin/env bash
+    set -euo pipefail
     just _header "Updating Helm Chart"
-    just _info "Fetching latest matrix-stack Helm chart..."
     mkdir -p "{{ HELM_CACHE_DIR }}"
-    @if [ "$(just _has_command helm)" = "no" ]; then \
-        just _error "helm not installed"; \
-        exit 1; \
+    if [ "$(just _has_command helm)" = "no" ]; then
+        just _error "helm not installed"
+        exit 1
     fi
-    helm repo add element https://packages.element.io/helm || true
-    helm repo update element
-    helm pull element/matrix-stack --destination "{{ HELM_CACHE_DIR }}" --untar --untardir "{{ HELM_CACHE_DIR }}" || \
-        just _info "Using locally cached chart"
-    just _success "Helm chart updated"
+    
+    # Check if chart already exists locally
+    if [ -d "{{ HELM_CACHE_DIR }}/matrix-stack" ]; then
+        just _success "Helm chart already cached locally"
+        exit 0
+    fi
+    
+    # Try to fetch from remote, but don't fail if offline
+    just _info "Attempting to fetch latest matrix-stack Helm chart..."
+    if helm repo add element https://packages.element.io/helm 2>/dev/null && \
+       helm repo update element 2>/dev/null && \
+       helm pull element/matrix-stack --destination "{{ HELM_CACHE_DIR }}" --untar --untardir "{{ HELM_CACHE_DIR }}" 2>/dev/null; then
+        just _success "Helm chart fetched from remote"
+    else
+        # If remote fetch fails, check if .tgz file exists locally and extract it
+        if [ -f "{{ HELM_CACHE_DIR }}/matrix-stack-"*.tgz ]; then
+            just _info "Remote fetch failed, extracting cached .tgz file..."
+            cd "{{ HELM_CACHE_DIR }}"
+            tar -xzf matrix-stack-*.tgz
+            just _success "Helm chart extracted from local cache"
+        else
+            just _warning "Could not fetch Helm chart from remote and no local .tgz found"
+            just _info "Setup will continue with offline mode"
+        fi
+    fi
 
 # Extract image versions from Helm chart
 @verify-helm:
@@ -359,7 +380,9 @@ KIND_NODE_VERSION := "v1.28.0"
       done
     else
       echo "  ✗ No packages built"
-    fi# Clean generated packages
+    fi
+
+# Clean generated packages
 
 @clean:
     just _header "Cleaning Generated Packages"
