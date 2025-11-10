@@ -1,0 +1,18 @@
+---
+# k3s-local role variables
+# This role sets up a local k3s cluster for building the air-gapped package
+
+# K3s version (should match installers role)
+k3s_version: "v1.33.5+k3s1"
+
+# K3s install options
+k3s_install_dir: "/usr/local/bin"
+k3s_config_dir: "/etc/rancher/k3s"
+k3s_data_dir: "/var/lib/rancher/k3s"
+
+# K3s install options
+k3s_install_options: "--write-kubeconfig-mode 644 --disable traefik"
+
+# Source directories
+installers_dir: "{{ lookup('env','PWD') | default(playbook_dir + '/../..') }}/installers"
+project_root: "{{ lookup('env','PWD') | default(playbook_dir + '/../..') }}"

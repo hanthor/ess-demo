@@ -1,0 +1,74 @@
+---
+# ansible/roles/k3s-local/tasks/main.yml
+# Sets up a local k3s cluster for building the air-gapped package
+
+- name: Check if k3s is already installed
+  command: which k3s
+  register: k3s_installed
+  failed_when: false
+  changed_when: false
+
+- name: Install k3s from downloaded binary
+  become: yes
+  block:
+    - name: Copy k3s binary to /usr/local/bin
+      copy:
+        src: "{{ installers_dir }}/linux/k3s"
+        dest: "/usr/local/bin/k3s"
+        mode: '0755'
+        remote_src: yes
+      when: ansible_architecture == 'x86_64'
+
+    - name: Copy k3s-arm64 binary to /usr/local/bin
+      copy:
+        src: "{{ installers_dir }}/linux/k3s-arm64"
+        dest: "/usr/local/bin/k3s"
+        mode: '0755'
+        remote_src: yes
+      when: ansible_architecture == 'aarch64'
+
+- name: Run k3s install script
+  become: yes
+  shell: |
+    curl -sfL https://get.k3s.io | sh -s - {{ k3s_install_options }}
+  args:
+    creates: /etc/systemd/system/k3s.service
+
+- name: Wait for k3s to be ready
+  become: yes
+  command: k3s kubectl get nodes
+  register: k3s_nodes
+  until: k3s_nodes.rc == 0
+  retries: 30
+  delay: 10
+
+- name: Wait for all system pods to be ready
+  become: yes
+  shell: |
+    k3s kubectl wait --for=condition=Ready pods --all -n kube-system --timeout=300s
+  register: pods_ready
+  retries: 3
+  delay: 10
+
+- name: Set KUBECONFIG for current user
+  lineinfile:
+    path: "{{ ansible_env.HOME }}/.bashrc"
+    line: "export KUBECONFIG=/etc/rancher/k3s/k3s.yaml"
+    state: present
+
+- name: Copy kubeconfig to project directory
+  become: yes
+  copy:
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: "{{ project_root }}/k3s-kubeconfig.yaml"
+    mode: '0644'
+    remote_src: yes
+
+- name: Display cluster info
+  become: yes
+  command: k3s kubectl cluster-info
+  register: cluster_info
+
+- name: Show cluster info
+  debug:
+    var: cluster_info.stdout_lines

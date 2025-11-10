@@ -1,0 +1,91 @@
+---
+# Main Ansible playbook for ESS Demo Setup with K3s/Rancher Desktop
+# This playbook provides complete idempotent setup with resumability
+#
+# Usage:
+#   ansible-playbook -i inventory.ini main-playbook.yml
+#   ansible-playbook -i inventory.ini main-playbook.yml --extra-vars "domain_name=ess.localhost"
+
+- name: ESS Community Demo Setup - K3s/Rancher Desktop
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+  become: no
+
+  vars:
+    # Directory paths
+    script_dir: "{{ playbook_dir | dirname }}"
+    installers_dir: "{{ script_dir }}/installers"
+    image_cache_dir: "{{ script_dir }}/image-cache"
+    demo_values_dir: "{{ script_dir }}/demo-values"
+    certs_dir: "{{ script_dir }}/certs"
+
+    # Configuration
+    cluster_name: "ess-demo"
+    namespace: "ess"
+    offline_mode: true
+
+    # Domain name (can be overridden with --extra-vars)
+    domain_name: "{{ domain_name | default('') }}"
+
+    # Detect platform
+    detected_os: "{{ 'macos' if ansible_os_family == 'Darwin' else 'linux' }}"
+    detected_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' or ansible_architecture == 'arm64' else 'x86_64' }}"
+    docker_arch: "{{ 'arm64' if detected_arch == 'arm64' else 'amd64' }}"
+
+  pre_tasks:
+    - name: Print setup header
+      debug:
+        msg: "ESS Community Portable Demo - Ansible Setup (K3s/Rancher Desktop)"
+
+    - name: Display detected platform
+      debug:
+        msg: "Detected platform: {{ detected_os }}/{{ detected_arch }}"
+
+    - name: Check if installers directory exists
+      stat:
+        path: "{{ installers_dir }}/{{ detected_os }}"
+      register: installers_check
+
+    - name: Fail if installers not found
+      fail:
+        msg: "No installers found for {{ detected_os }}. Please run ./build/download-installers.sh first"
+      when: not installers_check.stat.exists or installers_check.stat.isdir == false
+
+  tasks:
+    # Import role-based tasks
+    - name: Include container runtime setup
+      import_tasks: tasks/container-runtime.yml
+
+    - name: Include Kubernetes tools installation
+      import_tasks: tasks/kubernetes-tools.yml
+
+    - name: Include certificates setup
+      import_tasks: tasks/certificates.yml
+
+    - name: Include domain configuration
+      import_tasks: tasks/domain-config.yml
+
+    - name: Include cluster creation
+      import_tasks: tasks/cluster-setup.yml
+
+    - name: Include ESS deployment
+      import_tasks: tasks/ess-deployment.yml
+
+  post_tasks:
+    - name: Display completion message
+      debug:
+        msg:
+          - "✓ ESS Community Demo setup complete!"
+          - ""
+          - "Access your instance at:"
+          - "  Element Web:    https://chat.{{ domain_name }}"
+          - "  Admin Portal:   https://admin.{{ domain_name }}"
+          - "  Matrix Server:  https://matrix.{{ domain_name }}"
+          - "  Auth Service:   https://auth.{{ domain_name }}"
+          - ""
+          - "Useful commands:"
+          - "  kubectl get pods -n {{ namespace }}"
+          - "  k9s -n {{ namespace }}"
+          - ""
+          - "To clean up: ansible-playbook -i inventory.ini cleanup-playbook.yml"

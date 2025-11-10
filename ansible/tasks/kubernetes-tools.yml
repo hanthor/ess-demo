@@ -1,0 +1,110 @@
+---
+# Kubernetes Tools Installation Tasks
+# Installs kubectl, Helm, k9s
+
+- name: Check if kubectl is installed
+  command: kubectl version --client
+  register: kubectl_check
+  failed_when: false
+  changed_when: false
+
+- name: Install kubectl
+  when: kubectl_check.rc != 0
+  become: yes
+  copy:
+    src: "{{ installers_dir }}/{{ detected_os }}/kubectl"
+    dest: /usr/local/bin/kubectl
+    mode: '0755'
+
+- name: Verify kubectl installation
+  command: kubectl version --client
+  register: kubectl_verify
+  failed_when: kubectl_verify.rc != 0
+  changed_when: false
+
+- name: Check if Helm is installed
+  command: helm version
+  register: helm_check
+  failed_when: false
+  changed_when: false
+
+- name: Install Helm
+  when: helm_check.rc != 0
+  block:
+    - name: Find Helm archive
+      find:
+        paths: "{{ installers_dir }}/{{ detected_os }}"
+        patterns: "helm-{{ detected_os }}-{{ docker_arch }}.tar.gz"
+      register: helm_archive
+
+    - name: Extract Helm archive
+      unarchive:
+        src: "{{ helm_archive.files[0].path }}"
+        dest: /tmp
+        remote_src: yes
+
+    - name: Copy Helm binary
+      become: yes
+      copy:
+        src: "/tmp/{{ detected_os }}-{{ docker_arch }}/helm"
+        dest: /usr/local/bin/helm
+        mode: '0755'
+        remote_src: yes
+
+    - name: Clean up Helm extraction
+      file:
+        path: "/tmp/{{ detected_os }}-{{ docker_arch }}"
+        state: absent
+
+- name: Verify Helm installation
+  command: helm version
+  register: helm_verify
+  failed_when: helm_verify.rc != 0
+  changed_when: false
+
+- name: Check if k9s is installed
+  command: k9s version
+  register: k9s_check
+  failed_when: false
+  changed_when: false
+
+- name: Install k9s
+  when: k9s_check.rc != 0
+  block:
+    - name: Determine k9s OS name
+      set_fact:
+        k9s_os: "{{ 'Darwin' if detected_os == 'macos' else 'Linux' }}"
+        k9s_arch: "{{ 'amd64' if detected_arch == 'x86_64' else detected_arch }}"
+
+    - name: Find k9s archive
+      find:
+        paths: "{{ installers_dir }}/{{ detected_os }}"
+        patterns: "k9s_{{ k9s_os }}_{{ k9s_arch }}.tar.gz"
+      register: k9s_archive
+
+    - name: Extract k9s archive
+      unarchive:
+        src: "{{ k9s_archive.files[0].path }}"
+        dest: /tmp
+        remote_src: yes
+
+    - name: Copy k9s binary
+      become: yes
+      copy:
+        src: /tmp/k9s
+        dest: /usr/local/bin/k9s
+        mode: '0755'
+        remote_src: yes
+
+    - name: Clean up k9s binary
+      file:
+        path: /tmp/k9s
+        state: absent
+
+- name: Display tools installation status
+  debug:
+    msg:
+      - "Kubernetes tools installed successfully:"
+      - "  kubectl: {{ kubectl_verify.stdout_lines[0] | default('installed') }}"
+      - "  Helm: {{ helm_verify.stdout_lines[0] | default('installed') }}"
+      - "  k9s: installed"

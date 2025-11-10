@@ -1,0 +1,15 @@
+---
+# Default installer versions - these will be detected dynamically or use fallback
+# Set use_latest_versions=true to fetch latest from GitHub/upstream
+k3s_version: "v1.33.5+k3s1"  # Includes bundled kubectl
+helm_version: "v3.19.0"
+k9s_version: "v0.32.7"
+mkcert_version: "v1.4.4"
+rancher_desktop_version: "v1.16.0"
+hauler_version: "v1.1.1"  # Handles tarball extraction
+
+# Feature flags
+use_latest_versions: false
+
+# Target download directory (relative to project root)
+installers_dir: "{{ lookup('env','PWD') | default(playbook_dir + '/../..') }}/installers"

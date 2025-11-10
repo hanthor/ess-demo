@@ -1,3 +1,30 @@
+Build vs Runtime layout
+=======================
+
+This repository now separates "build/tooling" concerns from "runtime" concerns via lightweight wrapper scripts.
+
+Layout
+- build/tooling - wrappers for build/download/generation scripts (delegates to canonical scripts in `build/`)
+- build/runtime  - wrappers for runtime scripts (container runtime setup, hauler sync, ansible runner)
+- build/         - canonical scripts (download-installers.sh, generate-hauler-manifest.sh, etc.)
+
+Why wrappers?
+- Keeps current behavior intact (no large code moves) while providing a clearer surface for the Justfile and future refactors.
+- Non-destructive: original scripts remain the source of truth. Wrappers simply delegate to them.
+
+How to use
+- Build (download/caching):
+  - just download-current
+  - just download-all
+  - just generate-hauler-manifest
+
+- Runtime (local runtime setup / hauler operations):
+  - just setup-runtime
+  - just ansible-setup
+  - just hauler-sync
+
+Cleanup
+- Use `build/cleanup-unused.sh` to remove Docker Desktop references from `hauler-manifest.yaml` (creates a .bak first).
 # Build Scripts
 
 This directory contains scripts used during the **build and preparation** phase of the ESS Demo offline package. These scripts are **not** included in the final distribution packages.
@@ -5,9 +32,10 @@ This directory contains scripts used during the **build and preparation** phase 
 ## Scripts
 
 ### download-installers.sh / download-installers.ps1
-Downloads all required software installers for offline installation:
-- Docker Desktop/Engine
-- Kind (Kubernetes in Docker)
+- Downloads all required software installers for offline installation:
+- k3s (lightweight Kubernetes for edge and local clusters)
+- Rancher Desktop (optional, for macOS/Linux GUI runtime)
+- kubectl
 - kubectl
 - Helm
 - k9s
@@ -34,7 +62,7 @@ Caches all container images required for the ESS deployment for completely offli
 ```
 
 ### load-cached-images.sh
-Loads cached container images into Docker/Kind for offline deployment.
+Loads cached container images into the target cluster runtime (k3s) for offline deployment.
 
 **Usage:**
 ```bash

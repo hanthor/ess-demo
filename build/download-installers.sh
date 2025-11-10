@@ -4,17 +4,20 @@
 # Supports: macOS (Intel/Apple Silicon), Linux (x86_64/arm64), and Windows
 # Can download for all platforms or just the current platform
 # Idempotent: Skips downloads if checksums match remote versions
+# Strategy: K3s/Rancher Desktop as primary, Kind only if Docker/Podman already installed
 
 set -euo pipefail
 
-# Source shared checksum utilities
+# Source shared utilities
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/checksum-utils.sh"
+source "${SCRIPT_DIR}/version-utils.sh"
 
 # Download mode
 DOWNLOAD_ALL_PLATFORMS=false
 FORCE_DOWNLOAD=false
 SKIP_CONFIRMATION=true  # Default to skip confirmation
+USE_LATEST_VERSIONS=true  # Get latest versions dynamically by default
 
 # Colors for output
 RED='\033[0;31m'
@@ -27,14 +30,30 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALLERS_DIR="$(dirname "$SCRIPT_DIR")/installers"
 
-# Version definitions
-KIND_VERSION="v0.20.0"
-KUBECTL_VERSION="v1.28.4"
-HELM_VERSION="v3.13.2"
-K9S_VERSION="v0.29.1"
-MKCERT_VERSION="v1.4.4"
-DOCKER_VERSION="latest"
-ZSTD_VERSION="1.5.6"
+# Version definitions - Can be overridden by --use-static-versions flag
+# These are fallback versions for airgapped builds
+if [ "$USE_LATEST_VERSIONS" = true ]; then
+    K3S_VERSION="${K3S_VERSION:-$(get_latest_k3s_version || echo 'v1.31.3+k3s1')}"
+    RANCHER_DESKTOP_VERSION="${RANCHER_DESKTOP_VERSION:-$(get_latest_rancher_desktop_version || echo 'v1.16.0')}"
+    KUBECTL_VERSION="${KUBECTL_VERSION:-$(get_latest_kubectl_version || echo 'v1.31.3')}"
+    HELM_VERSION="${HELM_VERSION:-$(get_latest_helm_version || echo 'v3.16.3')}"
+    K9S_VERSION="${K9S_VERSION:-$(get_latest_k9s_version || echo 'v0.32.7')}"
+    MKCERT_VERSION="${MKCERT_VERSION:-$(get_latest_mkcert_version || echo 'v1.4.4')}"
+    ANSIBLE_VERSION="${ANSIBLE_VERSION:-$(get_latest_ansible_version || echo '11.1.0')}"
+    ZSTD_VERSION="${ZSTD_VERSION:-$(get_latest_zstd_version || echo 'v1.5.6')}"
+    HAULER_VERSION="${HAULER_VERSION:-$(get_latest_hauler_version || echo 'v1.1.1')}"
+else
+    # Static versions for airgapped/reproducible builds
+    K3S_VERSION="v1.31.3+k3s1"
+    RANCHER_DESKTOP_VERSION="v1.16.0"
+    KUBECTL_VERSION="v1.31.3"
+    HELM_VERSION="v3.16.3"
+    K9S_VERSION="v0.32.7"
+    MKCERT_VERSION="v1.4.4"
+    ANSIBLE_VERSION="11.1.0"
+    ZSTD_VERSION="v1.5.6"
+    HAULER_VERSION="v1.1.1"
+fi
 
 # Function to print colored messages
 print_info() {
@@ -300,78 +319,101 @@ detect_platform() {
     print_info "Detected platform: ${OS}/${ARCH}"
 }
 
-# Download Docker
-download_docker() {
-    print_header "Downloading Docker"
+# Download K3s
+download_k3s() {
+    print_header "Downloading K3s"
     
-    local DOCKER_DIR="${INSTALLERS_DIR}/${OS}"
-    mkdir -p "$DOCKER_DIR"
+    local K3S_DIR="${INSTALLERS_DIR}/${OS}"
+    mkdir -p "$K3S_DIR"
     
     if [ "$OS" = "macos" ]; then
-        # Docker Desktop for macOS
-        print_info "Docker Desktop for macOS"
-        print_warning "Downloading Docker Desktop (this is a large file, ~600MB)"
+        print_info "K3s is not officially supported on macOS - use Rancher Desktop instead"
+        return 0
+    elif [ "$OS" = "linux" ]; then
+        print_info "K3s ${K3S_VERSION} for Linux"
         
-        # Fetch latest version from Sparkle appcast (same method Homebrew uses)
-        local APPCAST_URL="https://desktop.docker.com/mac/main/${DOCKER_ARCH}/appcast.xml"
-        local LATEST_VERSION=""
-        
-        # Get all sparkle:version numbers and pick the highest
-        LATEST_VERSION=$(curl -sL "$APPCAST_URL" | grep -o 'sparkle:version="[0-9]*"' | grep -o '[0-9]*' | sort -rn | head -1 || echo "")
-        
-        local DOCKER_URL
-        local CHECKSUM_URL
-        
-        if [ -n "$LATEST_VERSION" ]; then
-            # Use specific version URL with checksums
-            DOCKER_URL="https://desktop.docker.com/mac/main/${DOCKER_ARCH}/${LATEST_VERSION}/Docker.dmg"
-            CHECKSUM_URL="https://desktop.docker.com/mac/main/${DOCKER_ARCH}/${LATEST_VERSION}/checksums.txt"
-            print_info "Latest Docker Desktop version: ${LATEST_VERSION}"
-        else
-            # Fallback to latest redirect URL (no checksum available)
-            print_warning "Could not determine version, using latest redirect"
-            DOCKER_URL="https://desktop.docker.com/mac/main/${DOCKER_ARCH}/Docker.dmg"
-            CHECKSUM_URL=""
+        local K3S_ARCH="${ARCH}"
+        if [ "$ARCH" = "x86_64" ]; then
+            K3S_ARCH="amd64"
         fi
         
-        download_file "$DOCKER_URL" "${DOCKER_DIR}/Docker.dmg" "$CHECKSUM_URL"
+        local K3S_URL="https://github.com/k3s-io/k3s/releases/download/${K3S_VERSION}/k3s"
+        if [ "$K3S_ARCH" = "arm64" ]; then
+            K3S_URL="https://github.com/k3s-io/k3s/releases/download/${K3S_VERSION}/k3s-arm64"
+        fi
+        
+        local CHECKSUM_URL="https://github.com/k3s-io/k3s/releases/download/${K3S_VERSION}/sha256sum-${K3S_ARCH}.txt"
+        
+        download_file "$K3S_URL" "${K3S_DIR}/k3s-${K3S_ARCH}" "$CHECKSUM_URL"
+        chmod +x "${K3S_DIR}/k3s-${K3S_ARCH}"
+    fi
+}
+
+# Download Rancher Desktop
+download_rancher_desktop() {
+    print_header "Downloading Rancher Desktop"
+    
+    local RD_DIR="${INSTALLERS_DIR}/${OS}"
+    mkdir -p "$RD_DIR"
+    
+    # Remove 'v' prefix from version for download URLs
+    local VERSION_NUM="${RANCHER_DESKTOP_VERSION#v}"
+    
+    if [ "$OS" = "macos" ]; then
+        print_info "Rancher Desktop ${RANCHER_DESKTOP_VERSION} for macOS"
+        print_warning "Downloading Rancher Desktop (this is a large file, ~600MB)"
+        
+        local RD_ARCH="${DOCKER_ARCH}"
+        if [ "$RD_ARCH" = "amd64" ]; then
+            RD_ARCH="x86_64"
+        fi
+        
+        local RD_URL="https://github.com/rancher-sandbox/rancher-desktop/releases/download/${RANCHER_DESKTOP_VERSION}/Rancher.Desktop-${VERSION_NUM}.${RD_ARCH}.dmg"
+        
+        download_file "$RD_URL" "${RD_DIR}/Rancher.Desktop-${VERSION_NUM}.${RD_ARCH}.dmg"
+    elif [ "$OS" = "linux" ]; then
+        print_info "Rancher Desktop is typically installed via package manager on Linux"
+        print_info "Downloading AppImage for portable use"
+        
+        # Rancher Desktop provides AppImage for Linux
+        local RD_URL="https://github.com/rancher-sandbox/rancher-desktop/releases/download/${RANCHER_DESKTOP_VERSION}/Rancher.Desktop-${VERSION_NUM}.x86_64.AppImage"
+        
+        download_file "$RD_URL" "${RD_DIR}/Rancher.Desktop-${VERSION_NUM}.x86_64.AppImage"
+        chmod +x "${RD_DIR}/Rancher.Desktop-${VERSION_NUM}.x86_64.AppImage"
+    fi
+}
+
+## Podman support removed for k3s-only flow.
+## If Podman needs to be reintroduced later, add a download_podman() function here.
+
+# Download Ansible
+download_ansible() {
+    print_header "Downloading Ansible"
+    
+    local ANSIBLE_DIR="${INSTALLERS_DIR}/${OS}"
+    mkdir -p "$ANSIBLE_DIR"
+    
+    print_info "Ansible ${ANSIBLE_VERSION}"
+    print_info "Downloading Python wheel for offline installation"
+    
+    # Download Ansible and its dependencies using pip download
+    # This creates a portable package that can be installed offline
+    local ANSIBLE_PKG_DIR="${ANSIBLE_DIR}/ansible-packages"
+    mkdir -p "$ANSIBLE_PKG_DIR"
+    
+    if command -v pip3 >/dev/null 2>&1; then
+        print_info "Downloading Ansible ${ANSIBLE_VERSION} and dependencies..."
+        pip3 download -d "$ANSIBLE_PKG_DIR" "ansible==${ANSIBLE_VERSION}" || {
+            print_warning "Failed to download Ansible packages"
+            print_info "Ansible will need to be installed from package manager"
+        }
     else
-        # Docker Engine for Linux
-        print_info "Docker Engine for Linux"
-        print_warning "Downloading Docker binaries (this may take a while)"
-        
-        local DOCKER_VERSION_TAG="24.0.7"
-        local DOCKER_URL
-        
-        if [ "$ARCH" = "arm64" ]; then
-            DOCKER_URL="https://download.docker.com/linux/static/stable/aarch64/docker-${DOCKER_VERSION_TAG}.tgz"
-        else
-            DOCKER_URL="https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION_TAG}.tgz"
-        fi
-        
-        download_file "$DOCKER_URL" "${DOCKER_DIR}/docker.tgz"
+        print_warning "pip3 not found, skipping Ansible package download"
+        print_info "Ansible will need to be installed from package manager"
     fi
 }
 
 # Download Kind
-download_kind() {
-    print_header "Downloading Kind"
-    
-    local KIND_DIR="${INSTALLERS_DIR}/${OS}"
-    mkdir -p "$KIND_DIR"
-    
-    # Kind uses 'darwin' instead of 'macos' in its release URLs
-    local KIND_OS="${OS}"
-    if [ "$OS" = "macos" ]; then
-        KIND_OS="darwin"
-    fi
-    
-    local KIND_URL="https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-${KIND_OS}-${DOCKER_ARCH}"
-    local CHECKSUM_URL="https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-${KIND_OS}-${DOCKER_ARCH}.sha256sum"
-    download_file "$KIND_URL" "${KIND_DIR}/kind-${OS}-${DOCKER_ARCH}" "$CHECKSUM_URL"
-    chmod +x "${KIND_DIR}/kind-${OS}-${DOCKER_ARCH}"
-}
-
 # Download kubectl
 download_kubectl() {
     print_header "Downloading kubectl"
@@ -498,13 +540,24 @@ download_for_platform() {
     ARCH="$target_arch"
     DOCKER_ARCH="$target_docker_arch"
     
-    download_docker
-    download_kind
+    # Download K3s (Linux only) or Rancher Desktop (macOS)
+    if [ "$target_os" = "linux" ]; then
+        download_k3s
+    elif [ "$target_os" = "macos" ]; then
+        download_rancher_desktop
+    fi
+    
+    # Podman is not part of the k3s-only flow (removed)
+    
+    # Download common tools
     download_kubectl
     download_helm
     download_k9s
     download_mkcert
     download_zstd
+    
+    # Download Ansible for automation
+    download_ansible
 }
 
 # Download for all platforms
@@ -512,9 +565,16 @@ download_all_platforms() {
     print_header "Downloading for All Platforms"
     
     print_warning "This will download installers for:"
-    echo "  • macOS (Intel x86_64 and Apple Silicon arm64)"
+    echo "  • macOS (Apple Silicon arm64)"
     echo "  • Linux (x86_64 and arm64)"
     echo "  • Windows (x86_64)"
+    echo ""
+    print_info "Installers include:"
+    echo "  • K3s (Linux only)"
+    echo "  • Rancher Desktop (macOS/Windows)"
+    echo "  • (Podman support removed; runtime is k3s)"
+    echo "  • kubectl, Helm, k9s, mkcert, zstd"
+    echo "  • Ansible (all platforms)"
     echo ""
     print_warning "Total download size: approximately 3-4GB"
     echo ""
@@ -528,10 +588,7 @@ download_all_platforms() {
         fi
     fi
     
-    # macOS Intel
-    download_for_platform "macos" "x86_64" "amd64"
-    
-    # macOS Apple Silicon
+    # macOS Apple Silicon (arm64)
     download_for_platform "macos" "arm64" "arm64"
     
     # Linux x86_64
@@ -546,15 +603,11 @@ download_all_platforms() {
     local WIN_DIR="${INSTALLERS_DIR}/windows"
     mkdir -p "$WIN_DIR"
     
-    # Docker Desktop for Windows
+    # Rancher Desktop for Windows
+    local VERSION_NUM="${RANCHER_DESKTOP_VERSION#v}"
     download_file \
-        "https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe" \
-        "${WIN_DIR}/Docker Desktop Installer.exe"
-    
-    # Kind for Windows
-    download_file \
-        "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-windows-amd64" \
-        "${WIN_DIR}/kind-windows-amd64.exe"
+        "https://github.com/rancher-sandbox/rancher-desktop/releases/download/${RANCHER_DESKTOP_VERSION}/Rancher.Desktop.Setup.${VERSION_NUM}.msi" \
+        "${WIN_DIR}/Rancher.Desktop.Setup.${VERSION_NUM}.msi"
     
     # kubectl for Windows
     download_file \
@@ -576,11 +629,21 @@ download_all_platforms() {
         "https://github.com/FiloSottile/mkcert/releases/download/${MKCERT_VERSION}/mkcert-${MKCERT_VERSION}-windows-amd64.exe" \
         "${WIN_DIR}/mkcert-windows-amd64.exe"
     
+    # Ansible for Windows (via Python pip)
+    local ANSIBLE_PKG_DIR="${WIN_DIR}/ansible-packages"
+    mkdir -p "$ANSIBLE_PKG_DIR"
+    if command -v pip3 >/dev/null 2>&1; then
+        print_info "Downloading Ansible ${ANSIBLE_VERSION} for Windows..."
+        pip3 download -d "$ANSIBLE_PKG_DIR" "ansible==${ANSIBLE_VERSION}" || {
+            print_warning "Failed to download Ansible packages for Windows"
+        }
+    fi
+    
     print_header "All Platforms Download Complete!"
     print_success "Installers for all platforms downloaded to: ${INSTALLERS_DIR}/"
     echo ""
     print_info "Directory structure:"
-    echo "  installers/macos/    - macOS installers (Intel + Apple Silicon)"
+    echo "  installers/macos/    - macOS installers (Apple Silicon only)"
     echo "  installers/linux/    - Linux installers (x86_64 + ARM64)"
     echo "  installers/windows/  - Windows installers"
 }
@@ -632,13 +695,18 @@ main() {
         detect_platform
         
         print_info "This script will download the following software:"
-        echo "  • Docker Desktop/Engine"
-        echo "  • Kind ${KIND_VERSION}"
+        if [ "$OS" = "linux" ]; then
+            echo "  • K3s ${K3S_VERSION}"
+        elif [ "$OS" = "macos" ]; then
+            echo "  • Rancher Desktop ${RANCHER_DESKTOP_VERSION}"
+        fi
+    echo "  • (Podman support removed; runtime is k3s)"
         echo "  • kubectl ${KUBECTL_VERSION}"
         echo "  • Helm ${HELM_VERSION}"
         echo "  • k9s ${K9S_VERSION}"
         echo "  • mkcert ${MKCERT_VERSION}"
         echo "  • zstd ${ZSTD_VERSION}"
+        echo "  • Ansible ${ANSIBLE_VERSION}"
         echo ""
         print_warning "Total download size: approximately 700MB - 1GB"
         echo ""
@@ -657,17 +725,22 @@ main() {
         fi
         
         # Download all components
-        download_docker
-        download_kind
-        download_kubectl
+        if [ "$OS" = "linux" ]; then
+            download_k3s
+        elif [ "$OS" = "macos" ]; then
+            download_rancher_desktop
+        fi
+    # Podman removed from k3s-only flow
+    download_kubectl
         download_helm
         download_k9s
         download_mkcert
         download_zstd
+        download_ansible
         
         print_header "Download Complete!"
         print_success "All installers downloaded to: ${INSTALLERS_DIR}/${OS}"
-        print_info "You can now run ./setup.sh to install and configure the demo"
+        print_info "You can now run Ansible playbooks to install and configure the demo"
     fi
 }
 

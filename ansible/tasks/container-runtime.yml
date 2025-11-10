@@ -1,0 +1,157 @@
+---
+# Container Runtime Setup Tasks
+# Installs K3s on Linux, Rancher Desktop on macOS, with Podman as fallback
+
+- name: Check for existing container runtime
+  block:
+    - name: Check if Docker is installed
+      command: docker --version
+      register: docker_check
+      failed_when: false
+      changed_when: false
+
+    - name: Check if Podman is installed
+      command: podman --version
+      register: podman_check
+      failed_when: false
+      changed_when: false
+
+    - name: Check if K3s is installed (Linux)
+      command: k3s --version
+      register: k3s_check
+      failed_when: false
+      changed_when: false
+      when: detected_os == 'linux'
+
+    - name: Check if Rancher Desktop is installed (macOS)
+      stat:
+        path: /Applications/Rancher Desktop.app
+      register: rancher_desktop_check
+      when: detected_os == 'macos'
+
+- name: Set container runtime facts
+  set_fact:
+    has_docker: "{{ docker_check.rc == 0 }}"
+    has_podman: "{{ podman_check.rc == 0 }}"
+    has_k3s: "{{ (k3s_check.rc | default(1)) == 0 }}"
+    has_rancher_desktop: "{{ rancher_desktop_check.stat.exists | default(false) }}"
+
+- name: Display container runtime status
+  debug:
+    msg:
+      - "Container runtime status:"
+      - "  Docker: {{ 'installed' if has_docker else 'not installed' }}"
+      - "  Podman: {{ 'installed' if has_podman else 'not installed' }}"
+      - "  K3s: {{ 'installed' if has_k3s else 'not installed' }}"
+      - "  Rancher Desktop: {{ 'installed' if has_rancher_desktop else 'not installed' }}"
+
+# Linux: Install K3s if not present
+- name: Install K3s on Linux
+  when: detected_os == 'linux' and not has_k3s and not has_docker and not has_podman
+  block:
+    - name: Copy K3s binary
+      become: yes
+      copy:
+        src: "{{ installers_dir }}/{{ detected_os }}/k3s-{{ docker_arch }}"
+        dest: /usr/local/bin/k3s
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: Install K3s service
+      become: yes
+      shell: |
+        curl -sfL https://get.k3s.io | sh -s - --write-kubeconfig-mode 644
+      args:
+        creates: /etc/systemd/system/k3s.service
+      register: k3s_install
+
+    - name: Wait for K3s to be ready
+      command: k3s kubectl get nodes
+      register: k3s_ready
+      until: k3s_ready.rc == 0
+      retries: 10
+      delay: 5
+      changed_when: false
+
+    - name: Set KUBECONFIG for K3s
+      set_fact:
+        kubeconfig_path: /etc/rancher/k3s/k3s.yaml
+
+# macOS: Install Rancher Desktop if not present
+- name: Install Rancher Desktop on macOS
+  when: detected_os == 'macos' and not has_rancher_desktop and not has_docker and not has_podman
+  block:
+    - name: Find Rancher Desktop DMG
+      find:
+        paths: "{{ installers_dir }}/{{ detected_os }}"
+        patterns: "Rancher.Desktop-*.dmg"
+      register: rancher_dmg
+
+    - name: Fail if Rancher Desktop installer not found
+      fail:
+        msg: "Rancher Desktop installer not found. Please run ./build/download-installers.sh"
+      when: rancher_dmg.files | length == 0
+
+    - name: Mount Rancher Desktop DMG
+      command: hdiutil attach "{{ rancher_dmg.files[0].path }}" -nobrowse
+      register: dmg_mount
+      changed_when: true
+
+    - name: Copy Rancher Desktop to Applications
+      become: yes
+      command: cp -R "/Volumes/Rancher Desktop/Rancher Desktop.app" /Applications/
+      args:
+        creates: /Applications/Rancher Desktop.app
+
+    - name: Unmount Rancher Desktop DMG
+      command: hdiutil detach "/Volumes/Rancher Desktop"
+      when: dmg_mount.changed
+      changed_when: false
+
+    - name: Display Rancher Desktop installation message
+      debug:
+        msg:
+          - "Rancher Desktop installed successfully"
+          - "Please start Rancher Desktop from Applications folder"
+          - "Wait for Kubernetes to be ready before continuing"
+
+    - name: Pause for Rancher Desktop startup
+      pause:
+        prompt: "Please start Rancher Desktop and wait for it to be ready. Press Enter when ready..."
+
+# Fallback: Install Podman if nothing else is available
+- name: Install Podman as fallback
+  when: not has_docker and not has_k3s and not has_rancher_desktop and not has_podman
+  block:
+    - name: Install Podman on Linux
+      when: detected_os == 'linux'
+      become: yes
+      package:
+        name: podman
+        state: present
+
+    - name: Install Podman on macOS
+      when: detected_os == 'macos'
+      block:
+        - name: Check if Homebrew is installed
+          command: brew --version
+          register: brew_check
+          failed_when: false
+          changed_when: false
+
+        - name: Install Podman via Homebrew
+          command: brew install podman
+          when: brew_check.rc == 0
+
+        - name: Display message if Homebrew not available
+          debug:
+            msg: "Homebrew not found. Please install Podman manually: https://podman.io/getting-started/installation"
+          when: brew_check.rc != 0
+
+- name: Verify container runtime is available
+  assert:
+    that:
+      - has_docker or has_podman or has_k3s or has_rancher_desktop
+    fail_msg: "No container runtime available. Please install Docker, Podman, K3s, or Rancher Desktop."
+    success_msg: "Container runtime is available"

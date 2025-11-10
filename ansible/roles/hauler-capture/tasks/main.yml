@@ -1,0 +1,163 @@
+---
+# ansible/roles/hauler-capture/tasks/main.yml
+# Captures all images from running k3s cluster and stores in hauler
+
+- name: Extract hauler binary
+  become: yes
+  block:
+    - name: Create temp directory for hauler
+      file:
+        path: /tmp/hauler-extract
+        state: directory
+
+    - name: Extract hauler tarball
+      unarchive:
+        src: "{{ installers_dir }}/linux/hauler_linux_amd64.tar.gz"
+        dest: /tmp/hauler-extract
+        remote_src: yes
+      when: ansible_architecture == 'x86_64'
+
+    - name: Extract hauler tarball (arm64)
+      unarchive:
+        src: "{{ installers_dir }}/linux/hauler_linux_arm64.tar.gz"
+        dest: /tmp/hauler-extract
+        remote_src: yes
+      when: ansible_architecture == 'aarch64'
+
+    - name: Copy hauler binary to /usr/local/bin
+      copy:
+        src: /tmp/hauler-extract/hauler
+        dest: /usr/local/bin/hauler
+        mode: '0755'
+        remote_src: yes
+
+- name: Create hauler store directory
+  file:
+    path: "{{ hauler_store_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Capture all cluster images with hauler
+  become: yes
+  command: >
+    hauler store save
+    --store {{ hauler_store_dir }}
+    --platform {{ hauler_platforms }}
+    -k
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  register: hauler_save
+  changed_when: true
+
+- name: Show hauler save output
+  debug:
+    var: hauler_save.stdout_lines
+
+- name: Display hauler store info
+  command: hauler store info --store {{ hauler_store_dir }}
+  register: store_info
+
+- name: Show store info
+  debug:
+    var: store_info.stdout_lines
+
+- name: Create hauler manifest for installers (Files only)
+  copy:
+    content: |
+      # Hauler Manifest - Installer Files
+      # Container images are captured from cluster with 'hauler store save -k'
+      apiVersion: content.hauler.cattle.io/v1alpha1
+      kind: Files
+      metadata:
+        name: ess-installer-files
+      spec:
+        files:
+          # K3s Installation and Airgap Images
+          - path: https://raw.githubusercontent.com/k3s-io/k3s/refs/heads/release-1.33/install.sh
+            name: k3s-install.sh
+          - path: https://github.com/k3s-io/k3s/releases/download/v1.33.5%2Bk3s1/k3s
+            name: k3s-amd64
+          - path: https://github.com/k3s-io/k3s/releases/download/v1.33.5%2Bk3s1/k3s-arm64
+            name: k3s-arm64
+          - path: https://github.com/k3s-io/k3s/releases/download/v1.33.5%2Bk3s1/k3s-airgap-images-amd64.tar.zst
+            name: k3s-airgap-images-amd64.tar.zst
+          - path: https://github.com/k3s-io/k3s/releases/download/v1.33.5%2Bk3s1/k3s-airgap-images-arm64.tar.zst
+            name: k3s-airgap-images-arm64.tar.zst
+          - path: https://github.com/k3s-io/k3s/releases/download/v1.33.5%2Bk3s1/sha256sum-amd64.txt
+            name: k3s-sha256sum-amd64.txt
+          - path: https://github.com/k3s-io/k3s/releases/download/v1.33.5%2Bk3s1/sha256sum-arm64.txt
+            name: k3s-sha256sum-arm64.txt
+          - path: https://github.com/k3s-io/k3s-selinux/releases/download/v1.6.latest.1/k3s-selinux-1.6-1.el9.noarch.rpm
+            name: k3s-selinux-1.6-1.el9.noarch.rpm
+          - path: https://github.com/k3s-io/k3s-selinux/releases/download/v1.6.latest.1/k3s-selinux-1.6-1.el9.noarch.rpm
+            name: k3s-selinux-1.6-1.el8.noarch.rpm
+          - path: https://github.com/k3s-io/k3s-selinux/releases/download/v1.6.latest.1/k3s-selinux-1.6-1.el9.noarch.rpm
+            name: k3s-selinux-1.6-1.el7.noarch.rpm
+
+          # kubectl binary
+          - path: https://dl.k8s.io/release/v1.31.3/bin/linux/amd64/kubectl
+            name: kubectl-linux-amd64
+          - path: https://dl.k8s.io/release/v1.31.3/bin/linux/arm64/kubectl
+            name: kubectl-linux-arm64
+          - path: https://dl.k8s.io/release/v1.31.3/bin/darwin/arm64/kubectl
+            name: kubectl-darwin-arm64
+          - path: https://dl.k8s.io/release/v1.31.3/bin/windows/amd64/kubectl.exe
+            name: kubectl-windows-amd64.exe
+
+          # Helm binary
+          - path: https://get.helm.sh/helm-v3.19.0-linux-amd64.tar.gz
+            name: helm-linux-amd64.tar.gz
+          - path: https://get.helm.sh/helm-v3.19.0-linux-arm64.tar.gz
+            name: helm-linux-arm64.tar.gz
+          - path: https://get.helm.sh/helm-v3.19.0-darwin-arm64.tar.gz
+            name: helm-darwin-arm64.tar.gz
+          - path: https://get.helm.sh/helm-v3.19.0-windows-amd64.zip
+            name: helm-windows-amd64.zip
+
+          # K9s binary
+          - path: https://github.com/derailed/k9s/releases/download/v0.32.7/k9s_Linux_amd64.tar.gz
+            name: k9s_Linux_amd64.tar.gz
+          - path: https://github.com/derailed/k9s/releases/download/v0.32.7/k9s_Linux_arm64.tar.gz
+            name: k9s_Linux_arm64.tar.gz
+          - path: https://github.com/derailed/k9s/releases/download/v0.32.7/k9s_Darwin_arm64.tar.gz
+            name: k9s_Darwin_arm64.tar.gz
+          - path: https://github.com/derailed/k9s/releases/download/v0.32.7/k9s_Windows_amd64.tar.gz
+            name: k9s_Windows_amd64.tar.gz
+
+          # mkcert binary
+          - path: https://github.com/FiloSottile/mkcert/releases/download/v1.4.4/mkcert-v1.4.4-linux-amd64
+            name: mkcert-linux-amd64
+          - path: https://github.com/FiloSottile/mkcert/releases/download/v1.4.4/mkcert-v1.4.4-linux-arm64
+            name: mkcert-linux-arm64
+          - path: https://github.com/FiloSottile/mkcert/releases/download/v1.4.4/mkcert-v1.4.4-darwin-arm64
+            name: mkcert-darwin-arm64
+          - path: https://github.com/FiloSottile/mkcert/releases/download/v1.4.4/mkcert-v1.4.4-windows-amd64.exe
+            name: mkcert-windows-amd64.exe
+
+          # Rancher Desktop
+          - path: https://github.com/rancher-sandbox/rancher-desktop/releases/download/v1.16.0/Rancher.Desktop-1.16.0.aarch64.dmg
+            name: Rancher.Desktop-arm64.dmg
+          - path: https://github.com/rancher-sandbox/rancher-desktop/releases/download/v1.16.0/Rancher.Desktop.Setup.1.16.0.msi
+            name: Rancher.Desktop.Setup.msi
+    dest: "{{ project_root }}/hauler-installers-manifest.yaml"
+    mode: '0644'
+
+- name: Sync installer files to hauler store
+  command: >
+    hauler store sync
+    --store {{ hauler_store_dir }}
+    --files {{ project_root }}/hauler-installers-manifest.yaml
+  register: hauler_sync
+  changed_when: true
+
+- name: Show hauler sync output
+  debug:
+    var: hauler_sync.stdout_lines
+
+- name: Final hauler store info
+  command: hauler store info --store {{ hauler_store_dir }}
+  register: final_store_info
+
+- name: Show final store info
+  debug:
+    var: final_store_info.stdout_lines

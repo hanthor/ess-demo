@@ -1,0 +1,105 @@
+---
+# Cluster Setup Tasks
+# Creates and configures Kubernetes cluster using K3s or Rancher Desktop
+
+- name: Determine cluster type
+  set_fact:
+    cluster_type: "{{ 'k3s' if has_k3s or (detected_os == 'linux' and not has_docker and not has_podman) else 'rancher-desktop' if has_rancher_desktop or detected_os == 'macos' else 'docker' }}"
+
+- name: Display cluster type
+  debug:
+    msg: "Using cluster type: {{ cluster_type }}"
+
+# K3s cluster setup (Linux)
+- name: Setup K3s cluster
+  when: cluster_type == 'k3s'
+  block:
+    - name: Check if K3s is running
+      become: yes
+      command: systemctl is-active k3s
+      register: k3s_status
+      failed_when: false
+      changed_when: false
+
+    - name: Start K3s service
+      become: yes
+      systemd:
+        name: k3s
+        state: started
+        enabled: yes
+      when: k3s_status.rc != 0
+
+    - name: Wait for K3s to be ready
+      command: k3s kubectl get nodes
+      register: k3s_ready
+      until: k3s_ready.rc == 0
+      retries: 10
+      delay: 5
+      changed_when: false
+
+    - name: Set kubectl context for K3s
+      set_fact:
+        kubectl_cmd: "k3s kubectl"
+        kubeconfig_path: /etc/rancher/k3s/k3s.yaml
+
+# Rancher Desktop cluster setup (macOS/Windows)
+- name: Setup Rancher Desktop cluster
+  when: cluster_type == 'rancher-desktop'
+  block:
+    - name: Check if Rancher Desktop Kubernetes is running
+      command: kubectl cluster-info
+      register: rd_cluster_info
+      failed_when: false
+      changed_when: false
+      environment:
+        KUBECONFIG: "{{ ansible_env.HOME }}/.kube/config"
+
+    - name: Display Rancher Desktop status
+      debug:
+        msg:
+          - "Rancher Desktop cluster status:"
+          - "{{ rd_cluster_info.stdout | default('Not ready') }}"
+
+    - name: Wait for Rancher Desktop to be ready
+      command: kubectl get nodes
+      register: rd_ready
+      until: rd_ready.rc == 0
+      retries: 30
+      delay: 10
+      changed_when: false
+      environment:
+        KUBECONFIG: "{{ ansible_env.HOME }}/.kube/config"
+
+    - name: Set kubectl context for Rancher Desktop
+      set_fact:
+        kubectl_cmd: "kubectl"
+        kubeconfig_path: "{{ ansible_env.HOME }}/.kube/config"
+
+# Verify cluster is ready
+- name: Verify cluster is ready
+  command: "{{ kubectl_cmd }} get nodes"
+  register: cluster_nodes
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  changed_when: false
+
+- name: Display cluster nodes
+  debug:
+    msg:
+      - "Cluster nodes:"
+      - "{{ cluster_nodes.stdout_lines }}"
+
+- name: Create ESS namespace
+  command: "{{ kubectl_cmd }} create namespace {{ namespace }}"
+  register: namespace_create
+  failed_when: namespace_create.rc != 0 and 'AlreadyExists' not in namespace_create.stderr
+  changed_when: namespace_create.rc == 0
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+
+- name: Display cluster setup status
+  debug:
+    msg:
+      - "Cluster setup complete"
+      - "Type: {{ cluster_type }}"
+      - "Namespace: {{ namespace }}"

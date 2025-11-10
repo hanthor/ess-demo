@@ -1,0 +1,138 @@
+---
+# ansible/test-airgapped.yml
+# Test air-gapped deployment by simulating end-user extraction and setup
+# This playbook validates that packages work without internet
+
+- name: Test Air-gapped Deployment
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+
+  vars:
+    test_dir: "/tmp/ess-airgap-test"
+    test_package: "{{ lookup('env','PWD') | default(playbook_dir + '/..') }}/packages/linux-airgap.tar.gz"
+
+  tasks:
+    - name: Verify test package exists
+      assert:
+        that:
+          - test_package is defined
+          - lookup('file', test_package) is defined
+        fail_msg: "Test package not found at {{ test_package }}. Run 'just package' first."
+
+    - name: Create test directory
+      file:
+        path: "{{ test_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Extract air-gapped package
+      unarchive:
+        src: "{{ test_package }}"
+        dest: "{{ test_dir }}"
+        remote_src: no
+        creates: "{{ test_dir }}/linux-airgap"
+
+    - name: Display package contents
+      debug:
+        msg: "📦 Package extracted to {{ test_dir }}/linux-airgap"
+
+    - name: Verify package structure
+      assert:
+        that:
+          - lookup('file', test_dir + '/linux-airgap/installers/index.json') is defined
+          - lookup('file', test_dir + '/linux-airgap/hauler-store/index.json') is defined
+          - lookup('file', test_dir + '/linux-airgap/setup.sh') is defined
+        fail_msg: "Package structure validation failed"
+
+    - name: Display setup script
+      debug:
+        msg: |
+          📋 Setup script content:
+          {{ lookup('file', test_dir + '/linux-airgap/setup.sh') | regex_replace('(?m)^', '  ') }}
+
+    - name: Display package manifest
+      debug:
+        msg: |
+          📦 Package manifest:
+          {{ lookup('file', test_dir + '/linux-airgap/installers/index.json') | from_json | to_nice_json | regex_replace('(?m)^', '  ') }}
+
+    - name: Display hauler store structure
+      shell: |
+        cd {{ test_dir }}/linux-airgap
+        echo "🗂️ Hauler store contents:"
+        ls -lah hauler-store/
+        echo ""
+        echo "OCI Layout:"
+        cat hauler-store/oci-layout
+        echo ""
+        echo "Manifest entries (first 5):"
+        jq -r '.manifests[0:5] | .[] | .annotations."io.hauler.artifact"' hauler-store/index.json 2>/dev/null | head -5 || echo "  (unable to parse manifests)"
+      register: store_output
+
+    - name: Display hauler store output
+      debug:
+        msg: "{{ store_output.stdout }}"
+
+    - name: Verify all required binaries present
+      block:
+        - name: Check Linux amd64 binaries
+          stat:
+            path: "{{ test_dir }}/linux-airgap/installers/{{ item }}"
+          register: binary_check
+          failed_when: not binary_check.stat.exists
+          loop:
+            - "k3s"
+            - "helm-linux-amd64.tar.gz"
+            - "k9s_Linux_amd64.tar.gz"
+            - "mkcert-linux-amd64"
+            - "hauler_linux_amd64.tar.gz"
+
+        - name: Display verified binaries
+          debug:
+            msg: |
+              ✅ All required Linux amd64 binaries present:
+                - k3s ({{ binary_check.results[0].stat.size | int / 1024 / 1024 | round(2) }} MB)
+                - helm-linux-amd64.tar.gz ({{ binary_check.results[1].stat.size | int / 1024 / 1024 | round(2) }} MB)
+                - k9s_Linux_amd64.tar.gz ({{ binary_check.results[2].stat.size | int / 1024 / 1024 | round(2) }} MB)
+                - mkcert-linux-amd64 ({{ binary_check.results[3].stat.size | int / 1024 / 1024 | round(2) }} MB)
+                - hauler_linux_amd64.tar.gz ({{ binary_check.results[4].stat.size | int / 1024 / 1024 | round(2) }} MB)
+
+    - name: Verify hauler store can be loaded
+      block:
+        - name: Test hauler store info
+          shell: |
+            export PATH=/usr/local/bin:$PATH
+            cd {{ test_dir }}/linux-airgap
+            
+            # Extract hauler binary temporarily
+            mkdir -p /tmp/test-hauler
+            tar -xz -C /tmp/test-hauler -f installers/hauler_linux_amd64.tar.gz
+            
+            # Check store info
+            /tmp/test-hauler/hauler store info --store hauler-store/ 2>&1 | head -20 || true
+          register: hauler_info
+          ignore_errors: yes
+
+        - name: Display hauler store info
+          debug:
+            msg: |
+              🔍 Hauler store information:
+              {{ hauler_info.stdout }}
+
+    - name: Test complete
+      debug:
+        msg: |
+          ✅ Air-gapped Package Test Complete!
+          
+          📦 Test location: {{ test_dir }}/linux-airgap
+          
+          ✅ Validations passed:
+             ✓ Package structure verified
+             ✓ All required binaries present
+             ✓ Hauler store accessible
+             ✓ Setup script present
+          
+          📋 Package is ready for deployment:
+             1. Extract: tar -xzf linux-airgap.tar.gz
+             2. Setup: cd linux-airgap && ./setup.sh

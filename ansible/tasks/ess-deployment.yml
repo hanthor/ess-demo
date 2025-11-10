@@ -1,0 +1,96 @@
+---
+# ESS Deployment Tasks
+# Deploys ESS Helm chart with all components
+
+- name: Generate SSL certificates with mkcert
+  command: mkcert -cert-file "{{ certs_dir }}/cert.pem" -key-file "{{ certs_dir }}/key.pem" "*.{{ domain_name }}" "{{ domain_name }}"
+  args:
+    creates: "{{ certs_dir }}/cert.pem"
+  register: cert_generate
+
+- name: Create TLS secret in Kubernetes
+  shell: |
+    {{ kubectl_cmd }} create secret tls ess-tls-secret \
+      --cert="{{ certs_dir }}/cert.pem" \
+      --key="{{ certs_dir }}/key.pem" \
+      -n {{ namespace }}
+  register: tls_secret
+  failed_when: tls_secret.rc != 0 and 'AlreadyExists' not in tls_secret.stderr
+  changed_when: tls_secret.rc == 0
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+
+- name: Add ESS Helm repository
+  command: helm repo add ess oci://ghcr.io/element-hq/ess-helm
+  register: helm_repo_add
+  failed_when: helm_repo_add.rc != 0 and 'exists' not in helm_repo_add.stderr
+  changed_when: helm_repo_add.rc == 0
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+
+- name: Update Helm repositories
+  command: helm repo update
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  changed_when: false
+
+- name: Deploy NGINX Ingress Controller
+  command: |
+    helm upgrade --install ingress-nginx ingress-nginx \
+      --repo https://kubernetes.github.io/ingress-nginx \
+      --namespace {{ namespace }} --create-namespace \
+      --set controller.service.type=NodePort \
+      --set controller.service.nodePorts.http=30080 \
+      --set controller.service.nodePorts.https=30443 \
+      --wait --timeout=10m
+  register: nginx_deploy
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  changed_when: "'has been upgraded' in nginx_deploy.stdout or 'has been installed' in nginx_deploy.stdout"
+
+- name: Wait for NGINX Ingress to be ready
+  command: "{{ kubectl_cmd }} wait --namespace {{ namespace }} --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=300s"
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  changed_when: false
+
+- name: Deploy ESS Helm chart
+  command: |
+    helm upgrade --install {{ cluster_name }} ess/matrix-stack \
+      --namespace {{ namespace }} --create-namespace \
+      --values {{ demo_values_dir }}/hostnames.yaml \
+      --values {{ demo_values_dir }}/tls.yaml \
+      --set global.imagePullPolicy=IfNotPresent \
+      --wait --timeout=15m
+  register: ess_deploy
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  changed_when: "'has been upgraded' in ess_deploy.stdout or 'has been installed' in ess_deploy.stdout"
+
+- name: Wait for all ESS pods to be ready
+  command: "{{ kubectl_cmd }} wait --namespace {{ namespace }} --for=condition=ready pod --all --timeout=600s"
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  register: pods_ready
+  failed_when: false
+  changed_when: false
+
+- name: Get pod status
+  command: "{{ kubectl_cmd }} get pods -n {{ namespace }}"
+  environment:
+    KUBECONFIG: "{{ kubeconfig_path }}"
+  register: pod_status
+  changed_when: false
+
+- name: Display pod status
+  debug:
+    msg:
+      - "ESS deployment status:"
+      - "{{ pod_status.stdout_lines }}"
+
+- name: Check if deployment was successful
+  assert:
+    that:
+      - ess_deploy.rc == 0
+    fail_msg: "ESS deployment failed. Check the pod status above for details."
+    success_msg: "ESS deployed successfully"

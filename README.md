@@ -1,6 +1,6 @@
 # ESS Community - Portable Cross-Platform Demo
 
-A fully portable, offline-capable demo of Element Server Suite (ESS) Community that works on macOS, Windows, and Linux. This demo uses Docker, Kind (Kubernetes in Docker), and mkcert to provide a complete local ESS environment.
+A fully portable, offline-capable demo of Element Server Suite (ESS) Community that works on macOS, Windows, and Linux. This demo uses **K3s** (Linux), **Rancher Desktop** (macOS/Windows), and **Ansible** to provide a complete, idempotent local ESS environment.
 
 ## 🚀 Quick Start
 
@@ -9,9 +9,9 @@ A fully portable, offline-capable demo of Element Server Suite (ESS) Community t
 If you're building offline distribution packages:
 
 ```bash
-# Install Just (task runner)
-brew install just  # macOS/Linux
-# or choco install just  # Windows
+# Install Just (task runner) and Ansible
+brew install just ansible  # macOS/Linux
+# or choco install just  # Windows (then install Ansible via pip)
 
 # Complete automated setup
 just setup
@@ -24,7 +24,22 @@ just build-packages    # Build distribution packages
 
 See [`JUSTFILE-README.md`](JUSTFILE-README.md) for full automation documentation.
 
-### For End Users
+### For End Users - Ansible Deployment (Recommended)
+
+The recommended deployment method uses Ansible for idempotent, resumable setup:
+
+```bash
+# Download installers first
+./build/download-installers.sh
+
+# Run Ansible playbook
+cd ansible
+ansible-playbook -i inventory.ini main-playbook.yml
+```
+
+See [`ansible/README.md`](ansible/README.md) for complete Ansible documentation.
+
+### For End Users - Pre-built Packages
 
 If you received a pre-built offline package, see the `INSTALL.md` in your platform package:
 - `packages/macos/INSTALL.md`
@@ -36,6 +51,7 @@ If you received a pre-built offline package, see the `INSTALL.md` in your platfo
 - **Internet connection** (only for initial download of installers during build)
 - **Administrator/sudo privileges** (for installation)
 - **~10GB free disk space** (~15GB for full air-gapped cache)
+- **Ansible** (recommended for deployment): `brew install ansible` or `pip install ansible`
 
 ## Build Process
 
@@ -64,12 +80,14 @@ build\download-installers.ps1 -All
 ```
 
 This downloads (~700MB-1GB per platform, or ~3-4GB for all platforms):
-- Docker Desktop (macOS/Windows) or Docker Engine (Linux)
-- Kind (Kubernetes in Docker)
-- kubectl (Kubernetes CLI)
-- Helm (Package manager)
-- k9s (Kubernetes TUI)
-- mkcert (Local certificate authority)
+- **K3s** (Linux only - lightweight Kubernetes)
+- **Rancher Desktop** (macOS/Windows - includes Kubernetes + container runtime)
+- **Podman** (alternative container runtime)
+- **kubectl** (Kubernetes CLI)
+- **Helm** (Package manager)
+- **k9s** (Kubernetes TUI)
+- **mkcert** (Local certificate authority)
+- **Ansible** (automation/deployment tool)
 
 ### Step 2: Cache Images for Air-Gapped Deployment (Optional)
 
@@ -81,12 +99,11 @@ just cache-images
 ```
 
 This downloads (~3-4GB):
-- Kind node image
 - ESS Helm chart
 - All ESS component images
 - NGINX Ingress images
 
-**Note:** This requires Docker to be running.
+**Note:** This requires a container runtime to be running (Docker/Podman/K3s/Rancher Desktop).
 
 ### Step 3: Build Distribution Packages
 

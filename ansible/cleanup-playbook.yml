@@ -1,0 +1,128 @@
+---
+# Cleanup playbook for ESS Demo
+# Removes cluster and optionally uninstalls software
+#
+# Usage:
+#   ansible-playbook -i inventory.ini cleanup-playbook.yml
+#   ansible-playbook -i inventory.ini cleanup-playbook.yml --extra-vars "uninstall_software=true"
+
+- name: ESS Community Demo Cleanup
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+  become: no
+
+  vars:
+    # Directory paths
+    script_dir: "{{ playbook_dir | dirname }}"
+    certs_dir: "{{ script_dir }}/certs"
+    demo_values_dir: "{{ script_dir }}/demo-values"
+
+    # Configuration
+    cluster_name: "ess-demo"
+    namespace: "ess"
+    uninstall_software: "{{ uninstall_software | default(false) }}"
+
+    # Detect platform
+    detected_os: "{{ 'macos' if ansible_os_family == 'Darwin' else 'linux' }}"
+
+  tasks:
+    - name: Print cleanup header
+      debug:
+        msg: "ESS Community Demo - Cleanup"
+
+    - name: Check if K3s is installed
+      command: k3s --version
+      register: k3s_check
+      failed_when: false
+      changed_when: false
+      when: detected_os == 'linux'
+
+    - name: Stop and disable K3s
+      when: detected_os == 'linux' and k3s_check.rc == 0
+      become: yes
+      block:
+        - name: Uninstall ESS from K3s
+          command: k3s kubectl delete namespace {{ namespace }} --ignore-not-found=true
+          register: namespace_delete
+          changed_when: namespace_delete.rc == 0
+
+        - name: Stop K3s service
+          systemd:
+            name: k3s
+            state: stopped
+          when: uninstall_software | bool
+
+        - name: Uninstall K3s
+          command: /usr/local/bin/k3s-uninstall.sh
+          when: uninstall_software | bool
+          register: k3s_uninstall
+          failed_when: false
+
+    - name: Cleanup Rancher Desktop deployment (macOS)
+      when: detected_os == 'macos'
+      block:
+        - name: Delete ESS namespace from Rancher Desktop
+          command: kubectl delete namespace {{ namespace }} --ignore-not-found=true
+          environment:
+            KUBECONFIG: "{{ ansible_env.HOME }}/.kube/config"
+          register: rd_namespace_delete
+          failed_when: false
+          changed_when: rd_namespace_delete.rc == 0
+
+        - name: Display Rancher Desktop uninstall message
+          debug:
+            msg:
+              - "To fully remove Rancher Desktop:"
+              - "1. Quit Rancher Desktop application"
+              - "2. Delete /Applications/Rancher Desktop.app"
+              - "3. Remove ~/.rd directory"
+          when: uninstall_software | bool
+
+    - name: Remove certificates
+      file:
+        path: "{{ certs_dir }}"
+        state: absent
+
+    - name: Remove demo values
+      file:
+        path: "{{ demo_values_dir }}"
+        state: absent
+
+    - name: Uninstall software tools
+      when: uninstall_software | bool
+      become: yes
+      block:
+        - name: Remove kubectl
+          file:
+            path: /usr/local/bin/kubectl
+            state: absent
+
+        - name: Remove helm
+          file:
+            path: /usr/local/bin/helm
+            state: absent
+
+        - name: Remove k9s
+          file:
+            path: /usr/local/bin/k9s
+            state: absent
+
+        - name: Remove mkcert
+          file:
+            path: /usr/local/bin/mkcert
+            state: absent
+
+        - name: Uninstall mkcert CA
+          command: mkcert -uninstall
+          become: no
+          failed_when: false
+          changed_when: false
+
+    - name: Display completion message
+      debug:
+        msg:
+          - "Cleanup complete!"
+          - "{{ 'All software removed' if uninstall_software else 'Cluster removed (software kept)' }}"
+          - ""
+          - "To remove software too, run with: --extra-vars 'uninstall_software=true'"

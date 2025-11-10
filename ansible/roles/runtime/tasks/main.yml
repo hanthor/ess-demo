@@ -1,0 +1,18 @@
+---
+ - name: Ensure k3s installer is present
+  stat:
+    path: "{{ installers_dir }}/k3s-{{ ansible_architecture }}"
+  register: k3s_bin
+
+ - name: Notify if k3s missing
+  debug:
+    msg: "k3s installer not found in installers directory. Set 'k3s_version' or run installers role to fetch it."
+  when: not k3s_bin.stat.exists
+
+ - name: Create runtime choice marker (k3s-only)
+  copy:
+    dest: "{{ installers_dir }}/runtime-choice.txt"
+    content: |
+      use_k3s: true
+    mode: '0644'
+    force: yes
