@@ -31,13 +31,15 @@ NC := "\\033[0m"
 
 # Version definitions
 
-KIND_VERSION := "v0.20.0"
-KUBECTL_VERSION := "v1.28.4"
-HELM_VERSION := "v3.13.2"
-K9S_VERSION := "v0.29.1"
+KIND_VERSION := "v0.24.0"
+KUBECTL_VERSION := "v1.31.3"
+HELM_VERSION := "v3.16.3"
+K9S_VERSION := "v0.32.7"
 MKCERT_VERSION := "v1.4.4"
 ZSTD_VERSION := "1.5.6"
-KIND_NODE_VERSION := "v1.28.0"
+KIND_NODE_VERSION := "v1.31.2"
+RANCHER_DESKTOP_VERSION := "1.16.0"
+PODMAN_VERSION := "5.3.1"
 
 # Print help
 @help:
@@ -46,6 +48,7 @@ KIND_NODE_VERSION := "v1.28.0"
     echo ""
     echo -e "{{ GREEN }}Setup & Dependencies:{{ NC }}"
     echo "  just setup              - Complete setup (deps + download + cache + build)"
+    echo "  just setup-runtime      - Setup container runtime (Docker/Podman/Rancher Desktop)"
     echo "  just install-deps       - Install Homebrew dependencies"
     echo "  just check-deps         - Check if all dependencies are installed"
     echo ""
@@ -58,6 +61,7 @@ KIND_NODE_VERSION := "v1.28.0"
     echo ""
     echo -e "{{ GREEN }}Hauler (Air-Gapped Management):{{ NC }}"
     echo "  just install-hauler     - Install Rancher Hauler for artifact management"
+    echo "  just generate-hauler-manifest - Generate manifest from ESS Helm chart"
     echo "  just hauler-sync        - Sync artifacts using Hauler manifest"
     echo "  just hauler-status      - Check Hauler store status"
     echo ""
@@ -165,6 +169,11 @@ KIND_NODE_VERSION := "v1.28.0"
     just _info "Installing mkcert..."
     brew install mkcert || just _warning "mkcert already installed"
     just _info "Installing jq (for JSON parsing)..."
+
+# Setup container runtime (Docker/Podman/Rancher Desktop)
+@setup-runtime:
+    just _header "Container Runtime Setup"
+    bash {{ BUILD_DIR }}/setup-container-runtime.sh
     brew install jq || just _warning "jq already installed"
     just _success "All Homebrew dependencies installed!"
 
@@ -428,8 +437,18 @@ KIND_NODE_VERSION := "v1.28.0"
     just _header "Installing Hauler"
     bash {{ BUILD_DIR }}/setup-hauler.sh
 
+# Generate Hauler manifest from ESS Helm chart values
+@generate-hauler-manifest:
+    just _header "Generating Hauler Manifest"
+    @if [ ! -f "{{ IMAGE_CACHE_DIR }}/helm-charts/matrix-stack/values.yaml" ]; then \
+        just _error "ESS Helm chart not found"; \
+        echo "Run: just cache-helm-charts"; \
+        exit 1; \
+    fi
+    bash {{ BUILD_DIR }}/generate-hauler-manifest.sh
+
 # Sync artifacts using Hauler
-@hauler-sync:
+@hauler-sync: generate-hauler-manifest
     just _header "Syncing Artifacts with Hauler"
     @if [ "$(just _has_command hauler)" = "no" ]; then \
         just _error "Hauler not installed"; \

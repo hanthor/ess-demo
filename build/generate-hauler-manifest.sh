@@ -1,3 +1,73 @@
+#!/usr/bin/env bash
+# Generate hauler manifest from ESS Helm chart values
+# This ensures the hauler manifest stays in sync with the actual ESS dependencies
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+MANIFEST_FILE="${PROJECT_ROOT}/hauler-manifest.yaml"
+CHART_VALUES="${PROJECT_ROOT}/image-cache/helm-charts/matrix-stack/values.yaml"
+
+if [[ ! -f "${CHART_VALUES}" ]]; then
+    echo "Error: ESS Helm chart values not found at ${CHART_VALUES}"
+    echo "Run 'just setup' first to download the chart"
+    exit 1
+fi
+
+echo "Generating hauler manifest from ESS Helm chart..."
+
+# Extract images from values.yaml
+# Format: registry/repository:tag
+extract_images() {
+    local values_file="$1"
+    
+    # Use awk to parse the YAML and extract image references
+    # This looks for registry, repository, and tag fields and combines them
+    awk '
+    BEGIN { registry = ""; repository = ""; tag = "" }
+    
+    # Match registry field
+    /^[[:space:]]*registry:/ {
+        registry = $2
+        gsub(/^["\047]|["\047]$/, "", registry)  # Remove quotes
+    }
+    
+    # Match repository field
+    /^[[:space:]]*repository:/ {
+        repository = $2
+        gsub(/^["\047]|["\047]$/, "", repository)
+    }
+    
+    # Match tag field
+    /^[[:space:]]*tag:/ {
+        tag = $2
+        gsub(/^["\047]|["\047]$/, "", tag)
+        
+        # When we have all three, output the full image reference
+        if (registry != "" && repository != "" && tag != "") {
+            if (registry == "docker.io") {
+                # Docker Hub - handle library/ prefix
+                if (repository ~ /^library\//) {
+                    # Remove library/ prefix for official images
+                    sub(/^library\//, "", repository)
+                }
+                print "    - name: docker.io/" repository ":" tag
+            } else {
+                print "    - name: " registry "/" repository ":" tag
+            }
+            
+            # Reset for next image
+            registry = ""
+            repository = ""
+            tag = ""
+        }
+    }
+    ' "$values_file" | sort -u
+}
+
+# Generate the manifest
+cat > "${MANIFEST_FILE}" << 'EOF'
 # Hauler Manifest for ESS Demo
 # This manifest is AUTO-GENERATED from the ESS Helm chart values
 # DO NOT EDIT MANUALLY - Run 'build/generate-hauler-manifest.sh' to regenerate
@@ -17,18 +87,13 @@ spec:
     - name: registry.k8s.io/ingress-nginx/kube-webhook-certgen:v20231011-8b53cabe0
 
     # ESS Component Images (extracted from Helm chart)
-    - name: docker.io/haproxy:3.2-alpine
-    - name: docker.io/livekit/livekit-server:v1.9.1
-    - name: docker.io/postgres:17-alpine
-    - name: docker.io/prometheuscommunity/postgres-exporter:v0.18.1
-    - name: docker.io/redis:7.4-alpine
-    - name: ghcr.io/element-hq/element-web:v1.12.3
-    - name: ghcr.io/element-hq/ess-helm/matrix-tools:0.5.6
-    - name: ghcr.io/element-hq/lk-jwt-service:0.3.0
-    - name: ghcr.io/element-hq/matrix-authentication-service:1.5.0
-    - name: ghcr.io/element-hq/matrix-authentication-service:1.5.0-debug
-    - name: ghcr.io/element-hq/synapse:v1.141.0
-    - name: oci.element.io/element-admin:0.1.8
+EOF
+
+# Add extracted images
+extract_images "${CHART_VALUES}" >> "${MANIFEST_FILE}"
+
+# Add Charts section
+cat >> "${MANIFEST_FILE}" << 'EOF'
 
 ---
 apiVersion: content.hauler.cattle.io/v1alpha1
@@ -104,3 +169,9 @@ spec:
     # Rancher Desktop for Windows
     - path: https://github.com/rancher-sandbox/rancher-desktop/releases/download/v1.16.0/Rancher.Desktop.Setup.1.16.0.msi
       name: Rancher.Desktop.Setup.msi
+EOF
+
+echo "✓ Generated hauler manifest at ${MANIFEST_FILE}"
+echo ""
+echo "Images extracted from ESS Helm chart:"
+extract_images "${CHART_VALUES}" | sed 's/^    - name: /  - /'
