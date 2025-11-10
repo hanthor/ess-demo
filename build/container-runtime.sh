@@ -1,13 +1,58 @@
 #!/bin/bash
 # Container Runtime Detection and Utilities
-# Supports Docker, Podman, and provides fallback logic
+# Supports K3s, Rancher Desktop, Docker, Podman
 # Source this script to use the functions
 
 set -euo pipefail
 
-# Detect available container runtime
+# Detect available Kubernetes runtime
+# Returns: k3s, rancher-desktop, docker, podman, podman-rootful, or empty string if none found
+detect_k8s_runtime() {
+    # Check for K3s first (Linux)
+    if command -v k3s >/dev/null 2>&1; then
+        if systemctl is-active k3s >/dev/null 2>&1 2>&1 || k3s kubectl get nodes >/dev/null 2>&1; then
+            echo "k3s"
+            return 0
+        fi
+    fi
+    
+    # Check for Rancher Desktop (macOS/Windows)
+    if [ -d "/Applications/Rancher Desktop.app" ] || command -v rdctl >/dev/null 2>&1; then
+        # Verify kubectl works with Rancher Desktop context
+        if kubectl cluster-info >/dev/null 2>&1; then
+            echo "rancher-desktop"
+            return 0
+        fi
+    fi
+    
+    # Fall back to container runtimes (would need separate K8s setup)
+    # Check for rootful podman first (requires sudo but can bind privileged ports)
+    if command -v podman >/dev/null 2>&1 && sudo podman info >/dev/null 2>&1; then
+        if sudo podman info 2>/dev/null | grep -q "rootless: false"; then
+            echo "podman-rootful"
+            return 0
+        fi
+    fi
+    
+    # Fall back to regular podman (rootless)
+    if command -v podman >/dev/null 2>&1; then
+        echo "podman"
+        return 0
+    fi
+    
+    # Fall back to docker
+    if command -v docker >/dev/null 2>&1; then
+        echo "docker"
+        return 0
+    fi
+    
+    # No runtime found
+    echo ""
+    return 1
+}
+
+# Detect available container runtime (for image operations)
 # Returns: docker, podman, podman-rootful, or empty string if neither found
-# Prefers rootful podman if available (for privileged port access)
 detect_container_runtime() {
     # Check for rootful podman first (requires sudo but can bind privileged ports)
     if command -v podman >/dev/null 2>&1 && sudo podman info >/dev/null 2>&1; then
@@ -34,6 +79,16 @@ detect_container_runtime() {
     return 1
 }
 
+# Get the Kubernetes runtime to use
+get_k8s_runtime() {
+    local runtime=$(detect_k8s_runtime)
+    if [ -z "$runtime" ]; then
+        echo "ERROR: No Kubernetes runtime found. Install K3s or Rancher Desktop." >&2
+        return 1
+    fi
+    echo "$runtime"
+}
+
 # Get the container runtime to use (prefer docker, fallback to podman)
 get_container_runtime() {
     local runtime=$(detect_container_runtime)
@@ -42,6 +97,40 @@ get_container_runtime() {
         return 1
     fi
     echo "$runtime"
+}
+
+# Get kubectl command for the current runtime
+get_kubectl_cmd() {
+    local runtime=$(detect_k8s_runtime)
+    
+    case "$runtime" in
+        k3s)
+            echo "k3s kubectl"
+            ;;
+        rancher-desktop|docker|podman*)
+            echo "kubectl"
+            ;;
+        *)
+            echo "kubectl"
+            ;;
+    esac
+}
+
+# Get kubeconfig path for the current runtime
+get_kubeconfig_path() {
+    local runtime=$(detect_k8s_runtime)
+    
+    case "$runtime" in
+        k3s)
+            echo "/etc/rancher/k3s/k3s.yaml"
+            ;;
+        rancher-desktop|docker|podman*)
+            echo "${HOME}/.kube/config"
+            ;;
+        *)
+            echo "${HOME}/.kube/config"
+            ;;
+    esac
 }
 
 # Load image with appropriate runtime
@@ -72,63 +161,20 @@ container_load_image() {
     esac
 }
 
-# Run kind cluster with appropriate runtime
-# Usage: container_kind_create <cluster_name> <runtime> [additional_kind_args]
-container_kind_create() {
-    local cluster_name="$1"
-    local runtime="${2:-}"
-    shift 2
-    local additional_args="$@"
-    
-    if [ -z "$runtime" ]; then
-        runtime=$(get_container_runtime) || return 1
-    fi
+# Check Kubernetes cluster status
+# Returns: 0 if cluster is ready, 1 if not
+check_k8s_cluster() {
+    local runtime=$(detect_k8s_runtime)
+    local kubectl_cmd=$(get_kubectl_cmd)
     
     case "$runtime" in
-        docker)
-            # Docker is the default for Kind
-            kind create cluster --name "$cluster_name" $additional_args
+        k3s)
+            $kubectl_cmd get nodes >/dev/null 2>&1
             ;;
-        podman-rootful)
-            # Rootful Podman: set KIND_EXPERIMENTAL_PROVIDER and use sudo
-            sudo -E KIND_EXPERIMENTAL_PROVIDER=podman kind create cluster --name "$cluster_name" $additional_args
-            ;;
-        podman)
-            # Rootless Podman: set KIND_EXPERIMENTAL_PROVIDER environment variable for older Kind versions
-            # For newer Kind versions (0.22.0+) it auto-detects
-            KIND_EXPERIMENTAL_PROVIDER=podman kind create cluster --name "$cluster_name" $additional_args
+        rancher-desktop|docker|podman*)
+            kubectl cluster-info >/dev/null 2>&1 && kubectl get nodes >/dev/null 2>&1
             ;;
         *)
-            echo "ERROR: Unknown container runtime: $runtime" >&2
-            return 1
-            ;;
-    esac
-}
-
-# Run kind delete with appropriate runtime
-# Usage: container_kind_delete <cluster_name> <runtime>
-container_kind_delete() {
-    local cluster_name="$1"
-    local runtime="${2:-}"
-    
-    if [ -z "$runtime" ]; then
-        runtime=$(get_container_runtime) || return 1
-    fi
-    
-    case "$runtime" in
-        docker)
-            kind delete cluster --name "$cluster_name"
-            ;;
-        podman-rootful)
-            # Rootful Podman: set KIND_EXPERIMENTAL_PROVIDER and use sudo
-            sudo -E KIND_EXPERIMENTAL_PROVIDER=podman kind delete cluster --name "$cluster_name"
-            ;;
-        podman)
-            # Rootless Podman: set KIND_EXPERIMENTAL_PROVIDER environment variable for older Kind versions
-            KIND_EXPERIMENTAL_PROVIDER=podman kind delete cluster --name "$cluster_name"
-            ;;
-        *)
-            echo "ERROR: Unknown container runtime: $runtime" >&2
             return 1
             ;;
     esac
@@ -147,7 +193,7 @@ container_info() {
         docker)
             docker version
             ;;
-        podman)
+        podman|podman-rootful)
             podman version
             ;;
         *)
@@ -171,7 +217,7 @@ container_health_check() {
         docker)
             docker info >/dev/null 2>&1
             ;;
-        podman)
+        podman|podman-rootful)
             podman info >/dev/null 2>&1
             ;;
         *)
@@ -181,10 +227,13 @@ container_health_check() {
     esac
 }
 
+export -f detect_k8s_runtime
 export -f detect_container_runtime
+export -f get_k8s_runtime
 export -f get_container_runtime
+export -f get_kubectl_cmd
+export -f get_kubeconfig_path
 export -f container_load_image
-export -f container_kind_create
-export -f container_kind_delete
+export -f check_k8s_cluster
 export -f container_info
 export -f container_health_check
