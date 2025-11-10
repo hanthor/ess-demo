@@ -1,0 +1,42 @@
+---
+# Certificates Setup Tasks
+# Installs and configures mkcert for local SSL certificates
+
+- name: Check if mkcert is installed
+  command: mkcert -version
+  register: mkcert_check
+  failed_when: false
+  changed_when: false
+
+- name: Install mkcert
+  when: mkcert_check.rc != 0
+  block:
+    - name: Find mkcert binary
+      find:
+        paths: "{{ installers_dir }}/{{ detected_os }}"
+        patterns: "mkcert-{{ detected_os }}-{{ docker_arch }}"
+      register: mkcert_binary
+
+    - name: Copy mkcert binary
+      become: yes
+      copy:
+        src: "{{ mkcert_binary.files[0].path }}"
+        dest: /usr/local/bin/mkcert
+        mode: '0755'
+
+- name: Install mkcert CA
+  command: mkcert -install
+  register: mkcert_install
+  changed_when: "'The local CA is now installed' in mkcert_install.stdout"
+
+- name: Create certificates directory
+  file:
+    path: "{{ certs_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Display mkcert status
+  debug:
+    msg:
+      - "mkcert installed and CA configured"
+      - "Certificates will be generated after domain configuration"

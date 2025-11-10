@@ -1,15 +1,17 @@
-# Ansible Alternative Setup
+# Ansible Setup for ESS Demo
 
-This directory contains an **optional** Ansible-based alternative to the Bash setup scripts.
+This directory contains **comprehensive Ansible playbooks** for deploying ESS Community with K3s (Linux) or Rancher Desktop (macOS/Windows).
 
-## ⚠️ Note
+## Overview
 
-The Bash scripts (`setup.sh`) are the **recommended and primary** setup method. These Ansible playbooks are provided as an alternative for users who:
+The Ansible playbooks provide a **complete, idempotent, and resumable** setup process as the primary deployment method for ESS Demo. They support:
 
-- Already use Ansible in their infrastructure
-- Prefer declarative configuration management
-- Want to deploy across multiple machines
-- Need integration with existing Ansible workflows
+- **K3s** on Linux (lightweight Kubernetes)
+- **Rancher Desktop** on macOS and Windows
+- **Podman** as a fallback container runtime
+- **Automatic version detection** and installation
+- **Resumable deployments** (safe to re-run)
+- **Declarative configuration**
 
 ## Prerequisites
 
@@ -45,21 +47,23 @@ cd ..
 ./build/download-installers.sh
 ```
 
+This downloads K3s, Rancher Desktop, kubectl, Helm, k9s, mkcert, and Ansible packages for offline installation.
+
 ## Usage
 
-### Basic Setup (Interactive)
+### Complete Setup (Recommended)
 
 ```bash
-ansible-playbook -i inventory.ini setup-playbook.yml
+ansible-playbook -i inventory.ini main-playbook.yml
 ```
 
 You will be prompted for:
-- Domain name for your ESS instance
+- Domain name for your ESS instance (e.g., `ess.localhost`)
 
 ### Non-Interactive Setup
 
 ```bash
-ansible-playbook -i inventory.ini setup-playbook.yml \
+ansible-playbook -i inventory.ini main-playbook.yml \
   --extra-vars "domain_name=ess.localhost"
 ```
 
@@ -68,101 +72,203 @@ ansible-playbook -i inventory.ini setup-playbook.yml \
 See what would change without making changes:
 
 ```bash
-ansible-playbook -i inventory.ini setup-playbook.yml --check
+ansible-playbook -i inventory.ini main-playbook.yml --check
 ```
 
 ### Verbose Output
 
 ```bash
-ansible-playbook -i inventory.ini setup-playbook.yml -v
-ansible-playbook -i inventory.ini setup-playbook.yml -vv  # More verbose
-ansible-playbook -i inventory.ini setup-playbook.yml -vvv # Even more verbose
+ansible-playbook -i inventory.ini main-playbook.yml -v
+ansible-playbook -i inventory.ini main-playbook.yml -vv  # More verbose
+ansible-playbook -i inventory.ini main-playbook.yml -vvv # Even more verbose
 ```
 
-## What the Playbook Does
+## What the Playbooks Do
 
-The setup playbook performs these tasks:
+### Main Playbook (`main-playbook.yml`)
 
-1. ✓ Detects platform (macOS/Linux, architecture)
-2. ✓ Verifies installers are downloaded
-3. ✓ Checks for Docker/Podman
-4. ✓ Installs Kind, kubectl, Helm, mkcert from local installers
-5. ✓ Prompts for domain name
-6. ✓ Generates configuration files
-7. ✓ Creates Kind Kubernetes cluster
-8. ✓ Displays setup status
+The main setup playbook performs these tasks in order:
 
-## Advantages Over Bash
+1. ✓ **Platform Detection** - Detects OS (macOS/Linux) and architecture (x86_64/arm64)
+2. ✓ **Installer Verification** - Checks that installers are downloaded
+3. ✓ **Container Runtime Setup** - Installs K3s (Linux) or Rancher Desktop (macOS)
+   - Falls back to Podman if available
+   - Uses existing Docker/Podman if already installed
+4. ✓ **Kubernetes Tools** - Installs kubectl, Helm, k9s from local cache
+5. ✓ **Certificate Setup** - Installs mkcert and generates SSL certificates
+6. ✓ **Domain Configuration** - Prompts for and configures domain name
+7. ✓ **Cluster Creation** - Creates Kubernetes cluster with K3s or Rancher Desktop
+8. ✓ **ESS Deployment** - Deploys ESS Helm chart with all services
+9. ✓ **Status Display** - Shows access URLs and useful commands
 
-- **Idempotent**: Safe to run multiple times
-- **Declarative**: Describes desired state, not steps
-- **Better Error Handling**: Clear task-by-task feedback
-- **Dry Run**: See changes before applying
-- **Structured**: YAML is easier to read than complex bash
+### Cleanup Playbook (`cleanup-playbook.yml`)
 
-## Disadvantages vs Bash
+```bash
+# Remove cluster only
+ansible-playbook -i inventory.ini cleanup-playbook.yml
 
-- **Extra Dependency**: Requires Ansible installation
-- **Startup Overhead**: ~2-3 seconds slower
-- **Learning Curve**: Needs Ansible knowledge
-- **Complexity**: Simple tasks become verbose
+# Remove cluster AND uninstall all software
+ansible-playbook -i inventory.ini cleanup-playbook.yml \
+  --extra-vars "uninstall_software=true"
+```
+
+## Advantages of Ansible
+
+- **Idempotent**: Safe to run multiple times - won't break existing setup
+- **Resumable**: If interrupted, can continue from where it left off
+- **Declarative**: Describes desired state, not procedural steps
+- **Error Handling**: Clear task-by-task feedback and automatic rollback
+- **Dry Run**: Preview changes with `--check` mode
+- **Structured**: YAML is easier to read and maintain than bash
+- **Version Control**: Configuration is code, easy to track changes
+- **Extensible**: Easy to add new tasks or customize
+
+## Container Runtime Strategy
+
+The playbooks follow this strategy:
+
+### Linux
+1. Check for existing Docker/Podman
+2. If none found, install **K3s** (lightweight Kubernetes)
+3. K3s includes containerd runtime
+
+### macOS
+1. Check for existing Docker
+2. If none found, install **Rancher Desktop** (includes Kubernetes + containerd)
+3. Rancher Desktop provides GUI for container management
+
+### Windows
+1. Install **Rancher Desktop** (via MSI installer)
+2. Rancher Desktop includes everything needed
+
+### Fallback
+- If nothing else works, install **Podman** as container runtime
+
+## Files Structure
+
+```
+ansible/
+├── inventory.ini              # Ansible inventory (localhost only)
+├── main-playbook.yml          # Main setup playbook
+├── cleanup-playbook.yml       # Cleanup playbook
+├── setup-playbook.yml         # Legacy simplified playbook
+├── tasks/                     # Task files (imported by main playbook)
+│   ├── container-runtime.yml  # K3s/Rancher Desktop/Podman setup
+│   ├── kubernetes-tools.yml   # kubectl, Helm, k9s installation
+│   ├── certificates.yml       # mkcert and SSL certificate setup
+│   ├── domain-config.yml      # Domain name configuration
+│   ├── cluster-setup.yml      # Kubernetes cluster creation
+│   └── ess-deployment.yml     # ESS Helm chart deployment
+└── README.md                  # This file
+```
+
+## Resumability
+
+The playbooks are designed to be resumed safely:
+
+- **Installation checks**: Each tool checks if already installed before installing
+- **Namespace creation**: Uses `--ignore-not-found` to prevent errors on re-run
+- **Helm deployments**: Uses `helm upgrade --install` for idempotency
+- **Certificate generation**: Only generates if not exists
+- **Service checks**: Validates services are running before proceeding
+
+## Troubleshooting
+
+### Playbook fails partway through
+```bash
+# Simply re-run the playbook - it will resume from where it failed
+ansible-playbook -i inventory.ini main-playbook.yml
+```
+
+### Check cluster status
+```bash
+# For K3s (Linux)
+sudo k3s kubectl get pods -n ess
+
+# For Rancher Desktop (macOS)
+kubectl get pods -n ess
+```
+
+### View detailed logs
+```bash
+# Add verbose flag
+ansible-playbook -i inventory.ini main-playbook.yml -vv
+```
+
+### K3s not starting (Linux)
+```bash
+# Check K3s service status
+sudo systemctl status k3s
+
+# View K3s logs
+sudo journalctl -u k3s -f
+```
+
+### Rancher Desktop not ready (macOS)
+```bash
+# Start Rancher Desktop from Applications
+# Wait for Kubernetes icon to turn green
+# Then re-run the playbook
+```
+
+## Accessing Your ESS Instance
+
+After successful deployment:
+
+- **Element Web:** `https://chat.<your-domain>`
+- **Admin Portal:** `https://admin.<your-domain>`
+- **Matrix Server:** `https://matrix.<your-domain>`
+- **Auth Service:** `https://auth.<your-domain>`
+
+## Useful Commands
+
+```bash
+# View all pods
+kubectl get pods -n ess
+
+# Interactive monitoring with k9s
+k9s -n ess
+
+# View logs for a specific pod
+kubectl logs -n ess <pod-name>
+
+# Delete and redeploy
+ansible-playbook -i inventory.ini cleanup-playbook.yml
+ansible-playbook -i inventory.ini main-playbook.yml
+```
 
 ## Comparison with Bash Scripts
 
-See [../ANSIBLE-VS-BASH.md](../ANSIBLE-VS-BASH.md) for detailed comparison.
+| Feature | Ansible Playbooks | Bash Scripts |
+|---------|------------------|--------------|
+| Idempotency | ✅ Built-in | ⚠️ Manual |
+| Resumability | ✅ Automatic | ❌ Must start over |
+| Error Handling | ✅ Automatic rollback | ⚠️ Manual |
+| Dry Run | ✅ `--check` mode | ❌ Not available |
+| Readability | ✅ Declarative YAML | ⚠️ Procedural bash |
+| Dependencies | Ansible required | None (just bash) |
+| Platform Support | All (with Ansible) | All (native bash) |
 
-**Summary**: Bash scripts are simpler and recommended for most users. Use Ansible if you already have it in your workflow.
+**Recommendation**: Use Ansible playbooks for production and reproducible deployments. Both approaches are fully supported.
 
-## Current Status
+## Contributing
 
-**Note**: This is a **simplified prototype** demonstrating Ansible as an alternative. The full Bash implementation in `setup.sh` has more features and is more thoroughly tested.
+When adding new features:
 
-### Implemented
-- Platform detection
-- Dependency installation from local installers
-- Domain name configuration
-- Basic setup workflow
+1. Add tasks to appropriate file in `tasks/` directory
+2. Ensure idempotency (safe to re-run)
+3. Add checks before destructive operations
+4. Update this README with new features
+5. Test on both Linux and macOS
 
-### Not Yet Implemented in Ansible Version
-- Full Docker installation (macOS DMG mounting, Linux daemon setup)
-- Cached image loading
-- Kind cluster creation with cached images
-- NGINX Ingress installation
-- Certificate generation with mkcert
-- ESS Helm chart deployment
-- Complete access information display
+## Support
 
-To get a fully working setup, use the Bash scripts instead:
+For issues:
+- Check [TROUBLESHOOTING.md](../TROUBLESHOOTING.md) in main directory
+- Review Ansible verbose output with `-vv` flag
+- Check container runtime logs (K3s/Rancher Desktop)
+- Verify all installers are downloaded
 
-```bash
-cd ..
-./setup.sh
-```
+## License
 
-## Files
-
-- `inventory.ini` - Ansible inventory (localhost only)
-- `setup-playbook.yml` - Main setup playbook (simplified)
-- `README.md` - This file
-
-## Future Enhancements (If Ansible adoption increases)
-
-- Complete playbook with all features from setup.sh
-- Cleanup playbook (equivalent to cleanup.sh)
-- Verification playbook (equivalent to verify.sh)
-- Role-based structure for better organization
-- Support for remote deployments
-- Multi-node Kind cluster setup
-
-## Questions?
-
-See the main project documentation in the parent directory:
-- [README.md](../README.md) - Main project documentation
-- [ANSIBLE-VS-BASH.md](../ANSIBLE-VS-BASH.md) - Detailed Ansible vs Bash analysis
-- [TROUBLESHOOTING.md](../TROUBLESHOOTING.md) - General troubleshooting
-
-## Recommendation
-
-**For most users**: Use `../setup.sh` instead.
-
-**Use this Ansible playbook if**: You're already an Ansible user and want to integrate ESS demo into your existing Ansible workflows.
+Same as main ESS Demo project.
