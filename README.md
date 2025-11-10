@@ -420,6 +420,49 @@ To completely reinstall:
 ./setup.sh
 ```
 
+## 🔀 Alternative Deployment Methods
+
+### Hauler (Air-Gapped Artifact Management)
+
+For advanced air-gapped deployments, Hauler provides unified artifact management:
+
+```bash
+# Install Hauler
+just install-hauler
+
+# Sync all artifacts (images, charts, files)
+just hauler-sync
+
+# Check status
+just hauler-status
+```
+
+Hauler provides:
+- Single manifest for all artifacts
+- Compressed storage (tar.zst)
+- Built-in registry serving
+- Checksum verification
+
+See [HAULER.md](HAULER.md) for complete documentation.
+
+### Ansible Playbooks (Optional)
+
+For users who prefer Ansible or need remote deployment:
+
+```bash
+# Install Ansible
+brew install ansible  # macOS
+# or: sudo apt install ansible  # Linux
+
+# Run setup playbook
+cd ansible
+ansible-playbook -i inventory.ini setup-playbook.yml
+```
+
+**Note**: Ansible is an **optional alternative**. The Bash scripts (`setup.sh`) are recommended for most users.
+
+See [ansible/README.md](ansible/README.md) and [ANSIBLE-VS-BASH.md](ANSIBLE-VS-BASH.md) for details.
+
 ## 📚 Additional Resources
 
 - [ESS Helm Chart](https://github.com/element-hq/ess-helm)
@@ -427,6 +470,15 @@ To completely reinstall:
 - [mkcert GitHub](https://github.com/FiloSottile/mkcert)
 - [kubectl Reference](https://kubernetes.io/docs/reference/kubectl/)
 - [k9s Documentation](https://k9scli.io/)
+- [Hauler Documentation](https://rancherfederal.github.io/hauler-docs/)
+
+## 📖 Additional Documentation
+
+- [HAULER.md](HAULER.md) - Hauler integration guide for air-gapped deployments
+- [ANSIBLE-VS-BASH.md](ANSIBLE-VS-BASH.md) - Comparison of Ansible vs Bash approaches
+- [AIR-GAPPED.md](AIR-GAPPED.md) - Traditional air-gapped deployment guide
+- [JUSTFILE-README.md](JUSTFILE-README.md) - Just task runner documentation
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Common issues and solutions
 
 ## 🤝 Support
 

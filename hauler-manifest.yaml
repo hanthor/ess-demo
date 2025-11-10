@@ -1,0 +1,82 @@
+# Hauler Manifest for ESS Demo
+# This manifest defines all artifacts needed for air-gapped ESS deployment
+# Usage: hauler store sync --files hauler-manifest.yaml
+
+apiVersion: content.hauler.cattle.io/v1alpha1
+kind: Images
+metadata:
+  name: ess-demo-images
+spec:
+  images:
+    # Kind node image for Kubernetes cluster
+    - name: docker.io/kindest/node:v1.28.0
+
+    # ESS Core Components (these would need to be updated with actual ESS image references)
+    # Note: ESS images are typically from ghcr.io/element-hq
+    # These are placeholder examples - actual images should come from Helm values
+
+    # NGINX Ingress Controller
+    - name: registry.k8s.io/ingress-nginx/controller:v1.9.4
+    - name: registry.k8s.io/ingress-nginx/kube-webhook-certgen:v20231011-8b53cabe0
+
+    # PostgreSQL
+    - name: docker.io/bitnami/postgresql:15
+
+    # Redis
+    - name: docker.io/redis:7-alpine
+
+---
+apiVersion: content.hauler.cattle.io/v1alpha1
+kind: Charts
+metadata:
+  name: ess-demo-charts
+spec:
+  charts:
+    # ESS Helm Chart
+    - name: matrix-stack
+      repoURL: oci://ghcr.io/element-hq/ess-helm
+      version: latest
+
+    # NGINX Ingress Helm Chart
+    - name: ingress-nginx
+      repoURL: https://kubernetes.github.io/ingress-nginx
+      version: 4.8.3
+
+---
+apiVersion: content.hauler.cattle.io/v1alpha1
+kind: Files
+metadata:
+  name: ess-demo-files
+spec:
+  files:
+    # Kind binary
+    - path: https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+      name: kind-linux-amd64
+    - path: https://kind.sigs.k8s.io/dl/v0.20.0/kind-darwin-amd64
+      name: kind-darwin-amd64
+    - path: https://kind.sigs.k8s.io/dl/v0.20.0/kind-darwin-arm64
+      name: kind-darwin-arm64
+
+    # kubectl binary
+    - path: https://dl.k8s.io/release/v1.28.4/bin/linux/amd64/kubectl
+      name: kubectl-linux-amd64
+    - path: https://dl.k8s.io/release/v1.28.4/bin/darwin/amd64/kubectl
+      name: kubectl-darwin-amd64
+    - path: https://dl.k8s.io/release/v1.28.4/bin/darwin/arm64/kubectl
+      name: kubectl-darwin-arm64
+
+    # Helm binary
+    - path: https://get.helm.sh/helm-v3.13.2-linux-amd64.tar.gz
+      name: helm-linux-amd64.tar.gz
+    - path: https://get.helm.sh/helm-v3.13.2-darwin-amd64.tar.gz
+      name: helm-darwin-amd64.tar.gz
+    - path: https://get.helm.sh/helm-v3.13.2-darwin-arm64.tar.gz
+      name: helm-darwin-arm64.tar.gz
+
+    # mkcert binary
+    - path: https://github.com/FiloSottile/mkcert/releases/download/v1.4.4/mkcert-v1.4.4-linux-amd64
+      name: mkcert-linux-amd64
+    - path: https://github.com/FiloSottile/mkcert/releases/download/v1.4.4/mkcert-v1.4.4-darwin-amd64
+      name: mkcert-darwin-amd64
+    - path: https://github.com/FiloSottile/mkcert/releases/download/v1.4.4/mkcert-v1.4.4-darwin-arm64
+      name: mkcert-darwin-arm64
