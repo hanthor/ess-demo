@@ -169,7 +169,17 @@ if ! command -v kind >/dev/null 2>&1; then
 fi
 
 # Check if cluster exists
-if ! kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
+CLUSTER_EXISTS=false
+if kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
+    CLUSTER_EXISTS=true
+elif [ -n "${CONTAINER_RUNTIME}" ] && [ "${CONTAINER_RUNTIME}" = "podman-rootful" ]; then
+    # For rootful podman, check if container exists directly
+    if sudo podman ps -a --filter "name=${CLUSTER_NAME}-control-plane" --format "{{.Names}}" 2>/dev/null | grep -q "${CLUSTER_NAME}"; then
+        CLUSTER_EXISTS=true
+    fi
+fi
+
+if [ "$CLUSTER_EXISTS" = false ]; then
     print_warning "Cluster '${CLUSTER_NAME}' does not exist"
     exit 0
 fi

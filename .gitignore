@@ -15,15 +15,10 @@ packages/
 .package-staging-*/
 
 # Installer downloads (too large for git)
-installers/**/*.tar.gz
-installers/**/*.zip
-installers/**/*.exe
-installers/**/*.msi
-installers/**/*.dmg
-installers/**/*.pkg
-installers/**/*.deb
-installers/**/*.rpm
-installers/**/*.tgz
+installers/macos/*
+installers/windows/*
+installers/linux/*
+
 
 # Keep installer directory structure
 !installers/.gitignore
