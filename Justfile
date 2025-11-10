@@ -56,6 +56,11 @@ KIND_NODE_VERSION := "v1.28.0"
     echo "  just cache-images       - Cache all container images for offline use"
     echo "  just cache-check        - Check cached images"
     echo ""
+    echo -e "{{ GREEN }}Hauler (Air-Gapped Management):{{ NC }}"
+    echo "  just install-hauler     - Install Rancher Hauler for artifact management"
+    echo "  just hauler-sync        - Sync artifacts using Hauler manifest"
+    echo "  just hauler-status      - Check Hauler store status"
+    echo ""
     echo -e "{{ GREEN }}Update & Verify:{{ NC }}"
     echo "  just update-helm        - Update/pull latest Helm chart"
     echo "  just verify-helm        - Verify Helm chart and extract image versions"
@@ -416,6 +421,39 @@ KIND_NODE_VERSION := "v1.28.0"
         just _success "Cleanup complete"; \
     else \
         just _warning "Cleanup cancelled"; \
+    fi
+
+# Install Hauler for air-gapped artifact management
+@install-hauler:
+    just _header "Installing Hauler"
+    bash {{ BUILD_DIR }}/setup-hauler.sh
+
+# Sync artifacts using Hauler
+@hauler-sync:
+    just _header "Syncing Artifacts with Hauler"
+    @if [ "$(just _has_command hauler)" = "no" ]; then \
+        just _error "Hauler not installed"; \
+        echo "Run: just install-hauler"; \
+        exit 1; \
+    fi
+    bash {{ BUILD_DIR }}/hauler-sync.sh
+
+# Check Hauler store status
+@hauler-status:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just _header "Hauler Store Status"
+    if [ "$(just _has_command hauler)" = "no" ]; then
+      echo -e "{{ RED }}✗{{ NC }} Hauler not installed"
+      echo -e "{{ BLUE }}ℹ{{ NC }} Run 'just install-hauler' to install"
+      exit 0
+    fi
+    if [ -d "{{ SCRIPT_DIR }}/hauler-store" ]; then
+      echo -e "{{ GREEN }}✓{{ NC }} Hauler store exists"
+      hauler store info --store "{{ SCRIPT_DIR }}/hauler-store" 2>/dev/null || echo "  (empty or invalid)"
+    else
+      echo -e "{{ YELLOW }}⚠{{ NC }} No Hauler store found"
+      echo -e "{{ BLUE }}ℹ{{ NC }} Run 'just hauler-sync' to sync artifacts"
     fi
 
 # Complete setup: deps, download, cache, verify, and build

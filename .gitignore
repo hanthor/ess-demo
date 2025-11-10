@@ -9,6 +9,11 @@ image-cache/
 build/image-cache/
 *.tar
 
+# Hauler store and archives (very large)
+hauler-store/
+*.tar.zst
+ess-hauler-store*.tar.zst
+
 # Generated packages (created by package-offline.sh)
 packages/
 
