@@ -1,16 +1,16 @@
 elementAdmin:
   ingress:
-    host: admin.test.localhost
+    host: admin.ess.localhost
 elementWeb:
   ingress:
-    host: chat.test.localhost
+    host: chat.ess.localhost
 matrixAuthenticationService:
   ingress:
-    host: auth.test.localhost
+    host: auth.ess.localhost
 matrixRTC:
   ingress:
-    host: mrtc.test.localhost
-serverName: test.localhost
+    host: mrtc.ess.localhost
+serverName: ess.localhost
 synapse:
   ingress:
-    host: matrix.test.localhost
+    host: matrix.ess.localhost

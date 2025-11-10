@@ -66,6 +66,17 @@ print_header() {
 CLUSTER_NAME="ess-demo"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Source container runtime utilities if available
+if [ -f "${SCRIPT_DIR}/build/container-runtime.sh" ]; then
+    source "${SCRIPT_DIR}/build/container-runtime.sh"
+fi
+
+# Determine container runtime to use
+CONTAINER_RUNTIME=""
+if command -v detect_container_runtime >/dev/null 2>&1; then
+    CONTAINER_RUNTIME=$(detect_container_runtime || true)
+fi
+
 # Uninstall software
 uninstall_software() {
     print_header "Uninstalling Software"
@@ -176,7 +187,15 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
 fi
 
 print_info "Deleting Kind cluster '${CLUSTER_NAME}'..."
-kind delete cluster --name "$CLUSTER_NAME"
+
+# Use container-aware deletion if available
+if command -v container_kind_delete >/dev/null 2>&1 && [ -n "${CONTAINER_RUNTIME}" ]; then
+    print_info "Using container runtime: ${CONTAINER_RUNTIME}"
+    container_kind_delete "$CLUSTER_NAME" "${CONTAINER_RUNTIME}"
+else
+    # Fallback to standard kind delete
+    kind delete cluster --name "$CLUSTER_NAME"
+fi
 
 print_success "Cluster deleted successfully"
 
