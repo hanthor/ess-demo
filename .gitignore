@@ -6,6 +6,7 @@ certs/
 
 # Image cache (very large, regenerate with cache-images.sh)
 image-cache/
+build/image-cache/
 *.tar
 
 # Generated packages (created by package-offline.sh)
@@ -18,6 +19,9 @@ packages/
 installers/macos/*
 installers/windows/*
 installers/linux/*
+build/installers/macos/*
+build/installers/windows/*
+build/installers/linux/*
 
 
 # Keep installer directory structure
