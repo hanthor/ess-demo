@@ -1,0 +1,16 @@
+---
+# hauler-capture role variables
+# Captures all images from running k3s cluster
+
+# Hauler version
+hauler_version: "v1.1.1"
+
+# Hauler store configuration
+hauler_store_dir: "{{ lookup('env','PWD') | default(playbook_dir + '/../..') }}/hauler-store"
+
+# Platform targets for multi-arch support
+hauler_platforms: "linux/amd64,linux/arm64"
+
+# Source directories
+installers_dir: "{{ lookup('env','PWD') | default(playbook_dir + '/../..') }}/installers"
+project_root: "{{ lookup('env','PWD') | default(playbook_dir + '/../..') }}"

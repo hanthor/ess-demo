@@ -9,10 +9,17 @@ metadata:
   name: ess-demo-images
 spec:
   images:
-    # Kind node image for Kubernetes cluster
-    - name: docker.io/kindest/node:v1.31.2
+  # K3s Runtime Images
+    - name: rancher/klipper-helm:v0.9.8-build20250709
+    - name: rancher/klipper-lb:v0.4.13
+    - name: rancher/local-path-provisioner:v0.0.31
+    - name: rancher/mirrored-coredns-coredns:1.12.3
+    - name: rancher/mirrored-library-busybox:1.36.1
+    - name: rancher/mirrored-library-traefik:3.3.6
+    - name: rancher/mirrored-metrics-server:v0.8.0
+    - name: rancher/mirrored-pause:3.6
 
-    # NGINX Ingress Controller (infrastructure dependency)
+  # NGINX Ingress Controller (infrastructure dependency)
     - name: registry.k8s.io/ingress-nginx/controller:v1.9.4
     - name: registry.k8s.io/ingress-nginx/kube-webhook-certgen:v20231011-8b53cabe0
 
@@ -54,43 +61,51 @@ metadata:
   name: ess-demo-files
 spec:
   files:
-    # Kind binary
-    - path: https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64
-      name: kind-linux-amd64
-    - path: https://kind.sigs.k8s.io/dl/v0.24.0/kind-darwin-amd64
-      name: kind-darwin-amd64
-    - path: https://kind.sigs.k8s.io/dl/v0.24.0/kind-darwin-arm64
-      name: kind-darwin-arm64
+    # K3s Installation and Airgap Images
+    - path: https://raw.githubusercontent.com/k3s-io/k3s/refs/heads/release-1.33/install.sh
+      name: k3s-install.sh
+    - path: https://github.com/k3s-io/k3s/releases/download/v1.33.5%2Bk3s1/k3s
+      name: k3s-amd64
+    - path: https://github.com/k3s-io/k3s/releases/download/v1.33.5%2Bk3s1/k3s-arm64
+      name: k3s-arm64
+    - path: https://github.com/k3s-io/k3s/releases/download/v1.33.5%2Bk3s1/k3s-airgap-images-amd64.tar.zst
+      name: k3s-airgap-images-amd64.tar.zst
+    - path: https://github.com/k3s-io/k3s/releases/download/v1.33.5%2Bk3s1/k3s-airgap-images-arm64.tar.zst
+      name: k3s-airgap-images-arm64.tar.zst
+    - path: https://github.com/k3s-io/k3s/releases/download/v1.33.5%2Bk3s1/sha256sum-amd64.txt
+      name: k3s-sha256sum-amd64.txt
+    - path: https://github.com/k3s-io/k3s/releases/download/v1.33.5%2Bk3s1/sha256sum-arm64.txt
+      name: k3s-sha256sum-arm64.txt
+    - path: https://github.com/k3s-io/k3s-selinux/releases/download/v1.6.latest.1/k3s-selinux-1.6-1.el9.noarch.rpm
+      name: k3s-selinux-1.6-1.el9.noarch.rpm
+    - path: https://github.com/k3s-io/k3s-selinux/releases/download/v1.6.latest.1/k3s-selinux-1.6-1.el9.noarch.rpm
+      name: k3s-selinux-1.6-1.el8.noarch.rpm
+    - path: https://github.com/k3s-io/k3s-selinux/releases/download/v1.6.latest.1/k3s-selinux-1.6-1.el9.noarch.rpm
+      name: k3s-selinux-1.6-1.el7.noarch.rpm
 
     # kubectl binary
     - path: https://dl.k8s.io/release/v1.31.3/bin/linux/amd64/kubectl
       name: kubectl-linux-amd64
-    - path: https://dl.k8s.io/release/v1.31.3/bin/darwin/amd64/kubectl
-      name: kubectl-darwin-amd64
     - path: https://dl.k8s.io/release/v1.31.3/bin/darwin/arm64/kubectl
       name: kubectl-darwin-arm64
 
     # Helm binary
-    - path: https://get.helm.sh/helm-v3.16.3-linux-amd64.tar.gz
+    - path: https://get.helm.sh/helm-v3.19.0-linux-amd64.tar.gz
       name: helm-linux-amd64.tar.gz
-    - path: https://get.helm.sh/helm-v3.16.3-darwin-amd64.tar.gz
-      name: helm-darwin-amd64.tar.gz
-    - path: https://get.helm.sh/helm-v3.16.3-darwin-arm64.tar.gz
+    - path: https://get.helm.sh/helm-v3.19.0-linux-arm64.tar.gz
+      name: helm-linux-arm64.tar.gz
+    - path: https://get.helm.sh/helm-v3.19.0-darwin-arm64.tar.gz
       name: helm-darwin-arm64.tar.gz
 
     # K9s binary
     - path: https://github.com/derailed/k9s/releases/download/v0.32.7/k9s_Linux_amd64.tar.gz
       name: k9s_Linux_amd64.tar.gz
-    - path: https://github.com/derailed/k9s/releases/download/v0.32.7/k9s_Darwin_amd64.tar.gz
-      name: k9s_Darwin_amd64.tar.gz
     - path: https://github.com/derailed/k9s/releases/download/v0.32.7/k9s_Darwin_arm64.tar.gz
       name: k9s_Darwin_arm64.tar.gz
 
     # mkcert binary
     - path: https://github.com/FiloSottile/mkcert/releases/download/v1.4.4/mkcert-v1.4.4-linux-amd64
       name: mkcert-linux-amd64
-    - path: https://github.com/FiloSottile/mkcert/releases/download/v1.4.4/mkcert-v1.4.4-darwin-amd64
-      name: mkcert-darwin-amd64
     - path: https://github.com/FiloSottile/mkcert/releases/download/v1.4.4/mkcert-v1.4.4-darwin-arm64
       name: mkcert-darwin-arm64
 
@@ -98,8 +113,7 @@ spec:
     # Rancher Desktop for macOS
     - path: https://github.com/rancher-sandbox/rancher-desktop/releases/download/v1.16.0/Rancher.Desktop-1.16.0.aarch64.dmg
       name: Rancher.Desktop-arm64.dmg
-    - path: https://github.com/rancher-sandbox/rancher-desktop/releases/download/v1.16.0/Rancher.Desktop-1.16.0.x86_64.dmg
-      name: Rancher.Desktop-amd64.dmg
+    # macOS amd64 entries removed; only arm64 is supported
     
     # Rancher Desktop for Windows
     - path: https://github.com/rancher-sandbox/rancher-desktop/releases/download/v1.16.0/Rancher.Desktop.Setup.1.16.0.msi

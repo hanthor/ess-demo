@@ -35,12 +35,10 @@ INSTALLERS_DIR="$(dirname "$SCRIPT_DIR")/installers"
 if [ "$USE_LATEST_VERSIONS" = true ]; then
     K3S_VERSION="${K3S_VERSION:-$(get_latest_k3s_version || echo 'v1.31.3+k3s1')}"
     RANCHER_DESKTOP_VERSION="${RANCHER_DESKTOP_VERSION:-$(get_latest_rancher_desktop_version || echo 'v1.16.0')}"
-    KIND_VERSION="${KIND_VERSION:-$(get_latest_kind_version || echo 'v0.24.0')}"
     KUBECTL_VERSION="${KUBECTL_VERSION:-$(get_latest_kubectl_version || echo 'v1.31.3')}"
     HELM_VERSION="${HELM_VERSION:-$(get_latest_helm_version || echo 'v3.16.3')}"
     K9S_VERSION="${K9S_VERSION:-$(get_latest_k9s_version || echo 'v0.32.7')}"
     MKCERT_VERSION="${MKCERT_VERSION:-$(get_latest_mkcert_version || echo 'v1.4.4')}"
-    PODMAN_VERSION="${PODMAN_VERSION:-$(get_latest_podman_version || echo 'v5.3.1')}"
     ANSIBLE_VERSION="${ANSIBLE_VERSION:-$(get_latest_ansible_version || echo '11.1.0')}"
     ZSTD_VERSION="${ZSTD_VERSION:-$(get_latest_zstd_version || echo 'v1.5.6')}"
     HAULER_VERSION="${HAULER_VERSION:-$(get_latest_hauler_version || echo 'v1.1.1')}"
@@ -48,12 +46,10 @@ else
     # Static versions for airgapped/reproducible builds
     K3S_VERSION="v1.31.3+k3s1"
     RANCHER_DESKTOP_VERSION="v1.16.0"
-    KIND_VERSION="v0.24.0"
     KUBECTL_VERSION="v1.31.3"
     HELM_VERSION="v3.16.3"
     K9S_VERSION="v0.32.7"
     MKCERT_VERSION="v1.4.4"
-    PODMAN_VERSION="v5.3.1"
     ANSIBLE_VERSION="11.1.0"
     ZSTD_VERSION="v1.5.6"
     HAULER_VERSION="v1.1.1"
@@ -387,37 +383,8 @@ download_rancher_desktop() {
     fi
 }
 
-# Download Podman
-download_podman() {
-    print_header "Downloading Podman"
-    
-    local PODMAN_DIR="${INSTALLERS_DIR}/${OS}"
-    mkdir -p "$PODMAN_DIR"
-    
-    # Remove 'v' prefix from version for download URLs
-    local VERSION_NUM="${PODMAN_VERSION#v}"
-    
-    if [ "$OS" = "macos" ]; then
-        print_info "Podman Desktop ${PODMAN_VERSION} for macOS"
-        
-        local PODMAN_ARCH="${ARCH}"
-        if [ "$ARCH" = "arm64" ]; then
-            PODMAN_ARCH="arm64"
-        else
-            PODMAN_ARCH="x64"
-        fi
-        
-        # Podman Desktop for macOS
-        local PODMAN_URL="https://github.com/containers/podman/releases/download/${PODMAN_VERSION}/podman-installer-macos-${PODMAN_ARCH}.pkg"
-        
-        download_file "$PODMAN_URL" "${PODMAN_DIR}/podman-installer-macos-${PODMAN_ARCH}.pkg" || {
-            print_warning "Podman installer not available, will use package manager"
-        }
-    elif [ "$OS" = "linux" ]; then
-        print_info "Podman for Linux - typically installed via package manager"
-        print_info "Download instructions will be included in setup"
-    fi
-}
+## Podman support removed for k3s-only flow.
+## If Podman needs to be reintroduced later, add a download_podman() function here.
 
 # Download Ansible
 download_ansible() {
@@ -580,8 +547,7 @@ download_for_platform() {
         download_rancher_desktop
     fi
     
-    # Download Podman (alternative runtime)
-    download_podman
+    # Podman is not part of the k3s-only flow (removed)
     
     # Download common tools
     download_kubectl
@@ -599,14 +565,14 @@ download_all_platforms() {
     print_header "Downloading for All Platforms"
     
     print_warning "This will download installers for:"
-    echo "  • macOS (Intel x86_64 and Apple Silicon arm64)"
+    echo "  • macOS (Apple Silicon arm64)"
     echo "  • Linux (x86_64 and arm64)"
     echo "  • Windows (x86_64)"
     echo ""
     print_info "Installers include:"
     echo "  • K3s (Linux only)"
     echo "  • Rancher Desktop (macOS/Windows)"
-    echo "  • Podman (macOS/Linux)"
+    echo "  • (Podman support removed; runtime is k3s)"
     echo "  • kubectl, Helm, k9s, mkcert, zstd"
     echo "  • Ansible (all platforms)"
     echo ""
@@ -622,10 +588,7 @@ download_all_platforms() {
         fi
     fi
     
-    # macOS Intel
-    download_for_platform "macos" "x86_64" "amd64"
-    
-    # macOS Apple Silicon
+    # macOS Apple Silicon (arm64)
     download_for_platform "macos" "arm64" "arm64"
     
     # Linux x86_64
@@ -680,7 +643,7 @@ download_all_platforms() {
     print_success "Installers for all platforms downloaded to: ${INSTALLERS_DIR}/"
     echo ""
     print_info "Directory structure:"
-    echo "  installers/macos/    - macOS installers (Intel + Apple Silicon)"
+    echo "  installers/macos/    - macOS installers (Apple Silicon only)"
     echo "  installers/linux/    - Linux installers (x86_64 + ARM64)"
     echo "  installers/windows/  - Windows installers"
 }
@@ -737,7 +700,7 @@ main() {
         elif [ "$OS" = "macos" ]; then
             echo "  • Rancher Desktop ${RANCHER_DESKTOP_VERSION}"
         fi
-        echo "  • Podman ${PODMAN_VERSION}"
+    echo "  • (Podman support removed; runtime is k3s)"
         echo "  • kubectl ${KUBECTL_VERSION}"
         echo "  • Helm ${HELM_VERSION}"
         echo "  • k9s ${K9S_VERSION}"
@@ -767,8 +730,8 @@ main() {
         elif [ "$OS" = "macos" ]; then
             download_rancher_desktop
         fi
-        download_podman
-        download_kubectl
+    # Podman removed from k3s-only flow
+    download_kubectl
         download_helm
         download_k9s
         download_mkcert

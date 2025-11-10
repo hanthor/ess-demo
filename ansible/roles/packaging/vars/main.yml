@@ -1,0 +1,17 @@
+---
+# ansible/roles/packaging/vars/main.yml
+# Packaging role variables
+
+# Directories
+packages_dir: "{{ lookup('env','PWD') | default(playbook_dir + '/../..') }}/packages"
+packaging_temp_dir: "/tmp/ess-packaging"
+hauler_store_path: "{{ lookup('env','PWD') | default(playbook_dir + '/../..') }}/hauler-store"
+installers_dir: "{{ lookup('env','PWD') | default(playbook_dir + '/../..') }}/installers"
+
+# Versions (inherited from installers role)
+k3s_version: "v1.33.5+k3s1"
+helm_version: "v3.19.0"
+k9s_version: "v0.32.7"
+mkcert_version: "v1.4.4"
+hauler_version: "v1.1.1"
+rancher_desktop_version: "v1.16.0"

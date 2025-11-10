@@ -1,101 +1,261 @@
 ---
-- name: Ensure installers directory exists
+# ansible/roles/installers/tasks/main.yml
+# Downloads all installer binaries for air-gapped use (multi-platform support)
+
+- name: Detect platform and architecture
+  set_fact:
+    platforms:
+      - os: "linux"
+        arches: ["amd64", "arm64"]
+      - os: "darwin"
+        arches: ["arm64"]  # macOS arm64 only
+      - os: "windows"
+        arches: ["amd64"]
+
+- name: Create base installers directory
   file:
     path: "{{ installers_dir }}"
     state: directory
     mode: '0755'
 
-- name: Detect platform tuple
-  set_fact:
-    platform_tuple: "{{ ansible_system | lower }}-{{ ansible_architecture }}"
-
-# Download k3s (if selected) - idempotent
-- name: Download k3s binary
-  ansible.builtin.get_url:
-    url: "https://github.com/k3s-io/k3s/releases/download/{{ k3s_version }}/k3s"
-    dest: "{{ installers_dir }}/k3s-{{ ansible_architecture }}"
-    mode: '0755'
-    force: no
-  when: k3s_version is defined
-
-# Download kind (if selected)
-- name: Download kind binary
-  ansible.builtin.get_url:
-    url: "https://github.com/kubernetes-sigs/kind/releases/download/{{ kind_version }}/kind-{{ ansible_architecture }}"
-    dest: "{{ installers_dir }}/kind-{{ ansible_architecture }}"
-    mode: '0755'
-    force: no
-  when: kind_version is defined
-
-# Download kubectl
-- name: Download kubectl binary
-  ansible.builtin.get_url:
-    url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
-    dest: "{{ installers_dir }}/kubectl-{{ ansible_architecture }}"
-    mode: '0755'
-    force: no
-  when: kubectl_version is defined
-
-# Download helm
-- name: Download helm archive
-  ansible.builtin.get_url:
-    url: "https://get.helm.sh/helm-{{ helm_version }}-linux-amd64.tar.gz"
-    dest: "{{ installers_dir }}/helm-{{ helm_version }}-linux-amd64.tar.gz"
-    force: no
-  when: helm_version is defined
-
-# Download k9s
-- name: Download k9s archive
-  ansible.builtin.get_url:
-    url: "https://github.com/derailed/k9s/releases/download/{{ k9s_version }}/k9s_Linux_amd64.tar.gz"
-    dest: "{{ installers_dir }}/k9s_{{ k9s_version }}.tar.gz"
-    force: no
-  when: k9s_version is defined
-
-# Download mkcert
-- name: Download mkcert
-  ansible.builtin.get_url:
-    url: "https://github.com/FiloSottile/mkcert/releases/download/{{ mkcert_version }}/mkcert-{{ mkcert_version }}-linux-amd64"
-    dest: "{{ installers_dir }}/mkcert-{{ mkcert_version }}-linux-amd64"
-    mode: '0755'
-    force: no
-  when: mkcert_version is defined
-
-# Download zstd (try primary and fall back to a known working link)
-- name: Download zstd tarball (primary URL)
-  ansible.builtin.get_url:
-    url: "https://github.com/facebook/zstd/releases/download/v{{ zstd_version }}/zstd-v{{ zstd_version }}.tar.gz"
-    dest: "{{ installers_dir }}/zstd-v{{ zstd_version }}.tar.gz"
-    force: no
-  register: zstd_download
-  failed_when: false
-
-- name: Download zstd tarball (fallback)
-  ansible.builtin.get_url:
-    url: "https://github.com/facebook/zstd/archive/refs/tags/v{{ zstd_version }}.tar.gz"
-    dest: "{{ installers_dir }}/zstd-v{{ zstd_version }}.tar.gz"
-    force: no
-  when: zstd_download is failed
-
-# Cache a placeholder for Ansible installer (we will download pip or package instructions)
-- name: Ensure ansible cache placeholder
+- name: Create per-OS installers subdirectories
   file:
-    path: "{{ installers_dir }}/ansible-readme.txt"
-    state: touch
-    mode: '0644'
-  when: ansible_version is defined
+    path: "{{ installers_dir }}/{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - linux
+    - macos
+    - windows
 
-- name: Create installers index.json (idempotent)
+# ====================
+# k3s Downloads
+# ====================
+- name: Download k3s binary (Linux amd64)
+  get_url:
+    url: "https://github.com/k3s-io/k3s/releases/download/{{ k3s_version }}/k3s"
+    dest: "{{ installers_dir }}/linux/k3s"
+    checksum: "sha256:https://github.com/k3s-io/k3s/releases/download/{{ k3s_version }}/sha256sum-amd64.txt"
+    mode: '0755'
+    force: no
+
+- name: Download k3s binary (Linux arm64)
+  get_url:
+    url: "https://github.com/k3s-io/k3s/releases/download/{{ k3s_version }}/k3s-arm64"
+    dest: "{{ installers_dir }}/linux/k3s-arm64"
+    checksum: "sha256:https://github.com/k3s-io/k3s/releases/download/{{ k3s_version }}/sha256sum-arm64.txt"
+    mode: '0755'
+    force: no
+
+# ====================
+# Helm Downloads
+# ====================
+- name: Download helm (Linux amd64)
+  get_url:
+    url: "https://get.helm.sh/helm-{{ helm_version }}-linux-amd64.tar.gz"
+    dest: "{{ installers_dir }}/linux/helm-linux-amd64.tar.gz"
+    checksum: "sha256:https://get.helm.sh/helm-{{ helm_version }}-linux-amd64.tar.gz.sha256sum"
+    mode: '0644'
+    force: no
+
+- name: Download helm (Linux arm64)
+  get_url:
+    url: "https://get.helm.sh/helm-{{ helm_version }}-linux-arm64.tar.gz"
+    dest: "{{ installers_dir }}/linux/helm-linux-arm64.tar.gz"
+    checksum: "sha256:https://get.helm.sh/helm-{{ helm_version }}-linux-arm64.tar.gz.sha256sum"
+    mode: '0644'
+    force: no
+
+- name: Download helm (macOS arm64)
+  get_url:
+    url: "https://get.helm.sh/helm-{{ helm_version }}-darwin-arm64.tar.gz"
+    dest: "{{ installers_dir }}/macos/helm-darwin-arm64.tar.gz"
+    checksum: "sha256:https://get.helm.sh/helm-{{ helm_version }}-darwin-arm64.tar.gz.sha256sum"
+    mode: '0644'
+    force: no
+
+- name: Download helm (Windows amd64)
+  get_url:
+    url: "https://get.helm.sh/helm-{{ helm_version }}-windows-amd64.zip"
+    dest: "{{ installers_dir }}/windows/helm-windows-amd64.zip"
+    checksum: "sha256:https://get.helm.sh/helm-{{ helm_version }}-windows-amd64.zip.sha256sum"
+    mode: '0644'
+    force: no
+
+# ====================
+# k9s Downloads
+# ====================
+- name: Download k9s (Linux amd64)
+  get_url:
+    url: "https://github.com/derailed/k9s/releases/download/{{ k9s_version }}/k9s_Linux_amd64.tar.gz"
+    dest: "{{ installers_dir }}/linux/k9s_Linux_amd64.tar.gz"
+    checksum: "sha256:https://github.com/derailed/k9s/releases/download/{{ k9s_version }}/checksums.sha256"
+    mode: '0644'
+    force: no
+
+- name: Download k9s (Linux arm64)
+  get_url:
+    url: "https://github.com/derailed/k9s/releases/download/{{ k9s_version }}/k9s_Linux_arm64.tar.gz"
+    dest: "{{ installers_dir }}/linux/k9s_Linux_arm64.tar.gz"
+    checksum: "sha256:https://github.com/derailed/k9s/releases/download/{{ k9s_version }}/checksums.sha256"
+    mode: '0644'
+    force: no
+
+- name: Download k9s (macOS arm64)
+  get_url:
+    url: "https://github.com/derailed/k9s/releases/download/{{ k9s_version }}/k9s_Darwin_arm64.tar.gz"
+    dest: "{{ installers_dir }}/macos/k9s_Darwin_arm64.tar.gz"
+    checksum: "sha256:https://github.com/derailed/k9s/releases/download/{{ k9s_version }}/checksums.sha256"
+    mode: '0644'
+    force: no
+
+- name: Download k9s (Windows amd64)
+  get_url:
+    url: "https://github.com/derailed/k9s/releases/download/{{ k9s_version }}/k9s_Windows_amd64.zip"
+    dest: "{{ installers_dir }}/windows/k9s_Windows_amd64.zip"
+    checksum: "sha256:https://github.com/derailed/k9s/releases/download/{{ k9s_version }}/checksums.sha256"
+    mode: '0644'
+    force: no
+
+# ====================
+# mkcert Downloads
+# ====================
+- name: Download mkcert (Linux amd64)
+  get_url:
+    url: "https://github.com/FiloSottile/mkcert/releases/download/{{ mkcert_version }}/mkcert-{{ mkcert_version }}-linux-amd64"
+    dest: "{{ installers_dir }}/linux/mkcert-linux-amd64"
+    mode: '0755'
+    force: no
+
+- name: Download mkcert (Linux arm64)
+  get_url:
+    url: "https://github.com/FiloSottile/mkcert/releases/download/{{ mkcert_version }}/mkcert-{{ mkcert_version }}-linux-arm64"
+    dest: "{{ installers_dir }}/linux/mkcert-linux-arm64"
+    mode: '0755'
+    force: no
+
+- name: Download mkcert (macOS arm64)
+  get_url:
+    url: "https://github.com/FiloSottile/mkcert/releases/download/{{ mkcert_version }}/mkcert-{{ mkcert_version }}-darwin-arm64"
+    dest: "{{ installers_dir }}/macos/mkcert-darwin-arm64"
+    mode: '0755'
+    force: no
+
+- name: Download mkcert (Windows amd64)
+  get_url:
+    url: "https://github.com/FiloSottile/mkcert/releases/download/{{ mkcert_version }}/mkcert-{{ mkcert_version }}-windows-amd64.exe"
+    dest: "{{ installers_dir }}/windows/mkcert-windows-amd64.exe"
+    mode: '0755'
+    force: no
+
+# ====================
+# zstd Downloads
+# ====================
+# ====================
+
+# ====================
+# Hauler Downloads
+# ====================
+- name: Download hauler (Linux amd64)
+  get_url:
+    url: "https://github.com/hauler-dev/hauler/releases/download/{{ hauler_version }}/hauler_{{ hauler_version | regex_replace('^v', '') }}_linux_amd64.tar.gz"
+    dest: "{{ installers_dir }}/linux/hauler_linux_amd64.tar.gz"
+    checksum: "sha256:https://github.com/hauler-dev/hauler/releases/download/{{ hauler_version }}/hauler_{{ hauler_version | regex_replace('^v', '') }}_checksums.txt"
+    mode: '0644'
+    force: no
+
+- name: Download hauler (Linux arm64)
+  get_url:
+    url: "https://github.com/hauler-dev/hauler/releases/download/{{ hauler_version }}/hauler_{{ hauler_version | regex_replace('^v', '') }}_linux_arm64.tar.gz"
+    dest: "{{ installers_dir }}/linux/hauler_linux_arm64.tar.gz"
+    checksum: "sha256:https://github.com/hauler-dev/hauler/releases/download/{{ hauler_version }}/hauler_{{ hauler_version | regex_replace('^v', '') }}_checksums.txt"
+    mode: '0644'
+    force: no
+
+- name: Download hauler (macOS arm64)
+  get_url:
+    url: "https://github.com/hauler-dev/hauler/releases/download/{{ hauler_version }}/hauler_{{ hauler_version | regex_replace('^v', '') }}_darwin_arm64.tar.gz"
+    dest: "{{ installers_dir }}/macos/hauler_darwin_arm64.tar.gz"
+    checksum: "sha256:https://github.com/hauler-dev/hauler/releases/download/{{ hauler_version }}/hauler_{{ hauler_version | regex_replace('^v', '') }}_checksums.txt"
+    mode: '0644'
+    force: no
+
+- name: Download hauler (Windows amd64)
+  get_url:
+    url: "https://github.com/hauler-dev/hauler/releases/download/{{ hauler_version }}/hauler_{{ hauler_version | regex_replace('^v', '') }}_windows_amd64.tar.gz"
+    dest: "{{ installers_dir }}/windows/hauler_windows_amd64.tar.gz"
+    checksum: "sha256:https://github.com/hauler-dev/hauler/releases/download/{{ hauler_version }}/hauler_{{ hauler_version | regex_replace('^v', '') }}_checksums.txt"
+    mode: '0644'
+    force: no
+
+# ====================
+# Rancher Desktop Downloads
+# ====================
+- name: Download Rancher Desktop (macOS arm64)
+  get_url:
+    url: "https://github.com/rancher-sandbox/rancher-desktop/releases/download/{{ rancher_desktop_version }}/Rancher.Desktop-{{ rancher_desktop_version | regex_replace('^v', '') }}.aarch64.dmg"
+    dest: "{{ installers_dir }}/macos/Rancher.Desktop.dmg"
+    checksum: "sha512:https://github.com/rancher-sandbox/rancher-desktop/releases/download/{{ rancher_desktop_version }}/Rancher.Desktop-{{ rancher_desktop_version | regex_replace('^v', '') }}.aarch64.dmg.sha512sum"
+    mode: '0644'
+    force: no
+
+- name: Download Rancher Desktop (Windows amd64)
+  get_url:
+    url: "https://github.com/rancher-sandbox/rancher-desktop/releases/download/{{ rancher_desktop_version }}/Rancher.Desktop.Setup.{{ rancher_desktop_version | regex_replace('^v', '') }}.msi"
+    dest: "{{ installers_dir }}/windows/Rancher.Desktop.Setup.msi"
+    checksum: "sha512:https://github.com/rancher-sandbox/rancher-desktop/releases/download/{{ rancher_desktop_version }}/Rancher.Desktop.Setup.{{ rancher_desktop_version | regex_replace('^v', '') }}.msi.sha512sum"
+    mode: '0644'
+    force: no
+
+# ====================
+# Generate manifest
+# ====================
+- name: Create installers index.json
   copy:
-    dest: "{{ installers_dir }}/index.json"
     content: |
       {
-        "k3s_version": "{{ k3s_version }}",
-        "kind_version": "{{ kind_version }}",
-        "kubectl_version": "{{ kubectl_version }}",
-        "helm_version": "{{ helm_version }}",
-        "k9s_version": "{{ k9s_version }}",
-        "mkcert_version": "{{ mkcert_version }}",
-        "zstd_version": "{{ zstd_version }}"
+        "generated": "{{ ansible_date_time.iso8601 }}",
+        "notes": "kubectl is bundled with k3s. hauler handles tarball extraction.",
+        "versions": {
+          "k3s": "{{ k3s_version }}",
+          "helm": "{{ helm_version }}",
+          "k9s": "{{ k9s_version }}",
+          "mkcert": "{{ mkcert_version }}",
+          "rancher_desktop": "{{ rancher_desktop_version }}",
+          "hauler": "{{ hauler_version }}"
+        },
+        "platforms": {
+          "linux": {
+            "architectures": ["amd64", "arm64"],
+            "files": [
+              "k3s", "k3s-arm64",
+              "helm-linux-amd64.tar.gz", "helm-linux-arm64.tar.gz",
+              "k9s_Linux_amd64.tar.gz", "k9s_Linux_arm64.tar.gz",
+              "mkcert-linux-amd64", "mkcert-linux-arm64",
+              "hauler_linux_amd64.tar.gz", "hauler_linux_arm64.tar.gz"
+            ]
+          },
+          "macos": {
+            "architectures": ["arm64"],
+            "files": [
+              "helm-darwin-arm64.tar.gz",
+              "k9s_Darwin_arm64.tar.gz",
+              "mkcert-darwin-arm64",
+              "Rancher.Desktop.dmg",
+              "hauler_darwin_arm64.tar.gz"
+            ]
+          },
+          "windows": {
+            "architectures": ["amd64"],
+            "files": [
+              "helm-windows-amd64.zip",
+              "k9s_Windows_amd64.zip",
+              "mkcert-windows-amd64.exe",
+              "Rancher.Desktop.Setup.msi",
+              "hauler_windows_amd64.tar.gz"
+            ]
+          }
+        }
       }
-    force: yes
+    dest: "{{ installers_dir }}/index.json"
+    mode: '0644'

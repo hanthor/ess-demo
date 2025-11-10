@@ -1,0 +1,133 @@
+---
+# Ansible Playbook for ESS Demo Air-gapped Package Build
+# This playbook builds the complete air-gapped package by:
+#   1. Downloading installers
+#   2. Setting up local k3s cluster
+#   3. Deploying ESS to k3s
+#   4. Capturing all cluster images with hauler
+#   5. Adding installer files to hauler store
+#
+# Usage:
+#   ansible-playbook -i inventory.ini setup-playbook.yml
+
+- name: Build ESS Air-gapped Package
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+
+  roles:
+    - role: installers
+      tags: ['installers']
+    - role: k3s-local
+      tags: ['k3s']
+    - role: ess-deploy
+      tags: ['ess', 'deploy']
+    - role: hauler-capture
+      tags: ['hauler', 'capture']
+
+    - name: Fail if installers not found
+      fail:
+        msg: "No installers found for {{ detected_os }}. Please run ./build/download-installers.sh first"
+      when: not installers_check.stat.exists or installers_check.stat.isdir == false
+
+    # Docker/Podman Installation
+    # k3s: ensure k3s binary is present (k3s will be used as the single supported cluster runtime)
+    - name: Check if k3s is installed
+      command: k3s --version
+      register: k3s_check
+      failed_when: false
+      changed_when: false
+      become: no
+
+    - name: Install k3s binary (copy from installers) when missing
+      copy:
+        src: "{{ installers_dir }}/{{ detected_os }}/k3s-{{ detected_arch }}"
+        dest: /usr/local/bin/k3s
+        mode: '0755'
+      when: k3s_check.rc != 0
+
+    # Install kubectl
+    - name: Check if kubectl is installed
+      command: kubectl version --client
+      register: kubectl_check
+      failed_when: false
+      changed_when: false
+      become: no
+
+    - name: Install kubectl
+      copy:
+        src: "{{ installers_dir }}/{{ detected_os }}/kubectl"
+        dest: /usr/local/bin/kubectl
+        mode: '0755'
+      when: kubectl_check.rc != 0
+
+    # Install Helm
+    - name: Check if Helm is installed
+      command: helm version
+      register: helm_check
+      failed_when: false
+      changed_when: false
+      become: no
+
+    - name: Install Helm
+      block:
+        - name: Extract Helm archive
+          unarchive:
+            src: "{{ installers_dir }}/{{ detected_os }}/helm-{{ detected_os }}-{{ docker_arch }}.tar.gz"
+            dest: /tmp
+            remote_src: yes
+
+        - name: Copy Helm binary
+          copy:
+            src: "/tmp/{{ detected_os }}-{{ docker_arch }}/helm"
+            dest: /usr/local/bin/helm
+            mode: '0755'
+            remote_src: yes
+      when: helm_check.rc != 0
+
+    # Install mkcert
+    - name: Check if mkcert is installed
+      command: mkcert --version
+      register: mkcert_check
+      failed_when: false
+      changed_when: false
+      become: no
+
+    - name: Install mkcert
+      copy:
+        src: "{{ installers_dir }}/{{ detected_os }}/mkcert-{{ detected_os }}-{{ docker_arch }}"
+        dest: /usr/local/bin/mkcert
+        mode: '0755'
+      when: mkcert_check.rc != 0
+
+    - name: Install mkcert CA
+      command: mkcert -install
+      become: no
+      when: mkcert_check.rc != 0
+
+    # Prompt for domain name if not provided
+    - name: Prompt for domain name
+      pause:
+        prompt: "Enter the base domain name for your ESS deployment (e.g., ess.localhost)"
+      register: domain_prompt
+      when: domain_name == ''
+
+    - name: Set domain name from prompt
+      set_fact:
+        domain_name: "{{ domain_prompt.user_input }}"
+      when: domain_name == ''
+
+    - name: Validate domain name
+      fail:
+        msg: "Domain name cannot be empty"
+      when: domain_name == ''
+
+    - name: Display final configuration
+      debug:
+        msg:
+          - "Setup Configuration:"
+          - "  Platform: {{ detected_os }}/{{ detected_arch }}"
+          - "  Container Runtime: {{ container_runtime }}"
+          - "  Domain: {{ domain_name }}"
+          - "  Cluster: {{ cluster_name }}"
+          - "  Namespace: {{ namespace }}"

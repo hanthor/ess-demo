@@ -1,0 +1,251 @@
+---
+# ansible/roles/ess-deploy/tasks/main.yml
+# Deploys ESS Helm chart to local k3s cluster
+
+- name: Extract helm binary
+  become: yes
+  block:
+    - name: Create temp directory for helm
+      file:
+        path: /tmp/helm-extract
+        state: directory
+
+    - name: Extract helm tarball
+      unarchive:
+        src: "{{ installers_dir }}/linux/helm-linux-amd64.tar.gz"
+        dest: /tmp/helm-extract
+        remote_src: yes
+      when: ansible_architecture == 'x86_64'
+
+    - name: Extract helm tarball (arm64)
+      unarchive:
+        src: "{{ installers_dir }}/linux/helm-linux-arm64.tar.gz"
+        dest: /tmp/helm-extract
+        remote_src: yes
+      when: ansible_architecture == 'aarch64'
+
+    - name: Copy helm binary to /usr/local/bin
+      copy:
+        src: /tmp/helm-extract/linux-amd64/helm
+        dest: /usr/local/bin/helm
+        mode: '0755'
+        remote_src: yes
+      when: ansible_architecture == 'x86_64'
+
+    - name: Copy helm binary to /usr/local/bin (arm64)
+      copy:
+        src: /tmp/helm-extract/linux-arm64/helm
+        dest: /usr/local/bin/helm
+        mode: '0755'
+        remote_src: yes
+      when: ansible_architecture == 'aarch64'
+
+- name: Add ingress-nginx Helm repository
+  become: yes
+  command: helm repo add ingress-nginx {{ ingress_chart_repo }}
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+- name: Update Helm repositories
+  become: yes
+  command: helm repo update
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+- name: Create ingress-nginx namespace
+  become: yes
+  command: k3s kubectl create namespace {{ ingress_namespace }}
+  register: create_ingress_ns
+  failed_when: create_ingress_ns.rc != 0 and 'AlreadyExists' not in create_ingress_ns.stderr
+  changed_when: create_ingress_ns.rc == 0
+
+- name: Install ingress-nginx
+  become: yes
+  command: >
+    helm install {{ ingress_release_name }} ingress-nginx/ingress-nginx
+    --namespace {{ ingress_namespace }}
+    --version {{ ingress_chart_version }}
+    --set controller.metrics.enabled=false
+    --set controller.podSecurityContext.runAsUser=0
+    --set controller.podSecurityContext.fsGroup=0
+    --wait --timeout 10m
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  register: ingress_install
+  failed_when: ingress_install.rc != 0 and 'already exists' not in ingress_install.stderr and 'still in use' not in ingress_install.stderr
+  changed_when: ingress_install.rc == 0
+
+- name: Upgrade ingress-nginx if already exists
+  become: yes
+  command: >
+    helm upgrade {{ ingress_release_name }} ingress-nginx/ingress-nginx
+    --namespace {{ ingress_namespace }}
+    --version {{ ingress_chart_version }}
+    --set controller.metrics.enabled=false
+    --set controller.podSecurityContext.runAsUser=0
+    --set controller.podSecurityContext.fsGroup=0
+    --wait --timeout 10m
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  when: ingress_install.failed and ('already exists' in ingress_install.stderr or 'still in use' in ingress_install.stderr)
+  register: ingress_upgrade
+  changed_when: ingress_upgrade.rc == 0
+
+- name: Wait for ingress-nginx pods to be ready (with CrashLoopBackOff detection)
+  become: yes
+  shell: |
+    #!/bin/bash
+    TIMEOUT=120
+    INTERVAL=5
+    ELAPSED=0
+    
+    while [ $ELAPSED -lt $TIMEOUT ]; do
+      # Check pod status
+      STATUS=$(k3s kubectl get pod -n {{ ingress_namespace }} -o jsonpath='{.items[0].status.containerStatuses[0].state.waiting.reason}' 2>/dev/null)
+      
+      if [ "$STATUS" = "CrashLoopBackOff" ]; then
+        echo "❌ ingress-nginx pod in CrashLoopBackOff!"
+        echo "Pod details:"
+        k3s kubectl describe pod -n {{ ingress_namespace }} | tail -50
+        exit 1
+      fi
+      
+      # Check if ready
+      if k3s kubectl wait --for=condition=Ready pods --all -n {{ ingress_namespace }} --timeout=5s 2>/dev/null; then
+        echo "✅ ingress-nginx ready!"
+        exit 0
+      fi
+      
+      ELAPSED=$((ELAPSED + INTERVAL))
+      echo "⏳ Waiting for ingress-nginx... ($ELAPSED/$TIMEOUT seconds, Status: $STATUS)"
+      sleep $INTERVAL
+    done
+    
+    echo "❌ Timeout waiting for ingress-nginx after $TIMEOUT seconds"
+    echo "Final pod status:"
+    k3s kubectl describe pod -n {{ ingress_namespace }} | tail -50
+    exit 1
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+- name: Create matrix namespace
+  become: yes
+  command: k3s kubectl create namespace {{ ess_namespace }}
+  register: create_matrix_ns
+  failed_when: create_matrix_ns.rc != 0 and 'AlreadyExists' not in create_matrix_ns.stderr
+  changed_when: create_matrix_ns.rc == 0
+
+- name: Check if certs directory exists
+  stat:
+    path: "{{ certs_dir }}"
+  register: certs_dir_stat
+
+- name: Generate TLS certificates if needed
+  shell: |
+    cd {{ project_root }}
+    ./build-certs.sh
+  when: not certs_dir_stat.stat.exists
+
+- name: Create TLS secrets from certs
+  become: yes
+  shell: |
+    for cert in {{ certs_dir }}/*-cert.pem; do
+      name=$(basename "$cert" -cert.pem)
+      key="{{ certs_dir }}/${name}-key.pem"
+      if [ -f "$key" ]; then
+        k3s kubectl create secret tls "${name}-tls" \
+          --cert="$cert" \
+          --key="$key" \
+          --namespace={{ ess_namespace }} \
+          --dry-run=client -o yaml | k3s kubectl apply -f -
+      fi
+    done
+  args:
+    executable: /bin/bash
+
+- name: Install ESS Helm chart
+  become: yes
+  command: >
+    helm install {{ ess_release_name }} {{ ess_chart_repo }}/{{ ess_chart_name }}
+    --namespace {{ ess_namespace }}
+    --version {{ ess_chart_version }}
+    --values {{ demo_values_dir }}/hostnames.yaml
+    --values {{ demo_values_dir }}/tls.yaml
+    --values {{ demo_values_dir }}/auth.yaml
+    --values {{ demo_values_dir }}/mrtc.yaml
+    --values {{ demo_values_dir }}/pull-policy.yml
+    --wait --timeout 20m
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  register: ess_install
+  failed_when: ess_install.rc != 0 and 'already exists' not in ess_install.stderr and 'still in use' not in ess_install.stderr
+  changed_when: ess_install.rc == 0
+
+- name: Upgrade ESS Helm chart if already exists
+  become: yes
+  command: >
+    helm upgrade {{ ess_release_name }} {{ ess_chart_repo }}/{{ ess_chart_name }}
+    --namespace {{ ess_namespace }}
+    --version {{ ess_chart_version }}
+    --values {{ demo_values_dir }}/hostnames.yaml
+    --values {{ demo_values_dir }}/tls.yaml
+    --values {{ demo_values_dir }}/auth.yaml
+    --values {{ demo_values_dir }}/mrtc.yaml
+    --values {{ demo_values_dir }}/pull-policy.yml
+    --wait --timeout 20m
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  when: ess_install.failed and ('already exists' in ess_install.stderr or 'still in use' in ess_install.stderr)
+  register: ess_upgrade
+  changed_when: ess_upgrade.rc == 0
+
+- name: Wait for all matrix pods to be ready (with error detection)
+  become: yes
+  shell: |
+    #!/bin/bash
+    TIMEOUT=600
+    INTERVAL=10
+    ELAPSED=0
+    
+    while [ $ELAPSED -lt $TIMEOUT ]; do
+      # Check for any CrashLoopBackOff pods
+      CRASH_PODS=$(k3s kubectl get pods -n {{ ess_namespace }} -o jsonpath='{.items[?(@.status.containerStatuses[0].state.waiting.reason=="CrashLoopBackOff")].metadata.name}' 2>/dev/null)
+      
+      if [ ! -z "$CRASH_PODS" ]; then
+        echo "❌ ESS pods in CrashLoopBackOff: $CRASH_PODS"
+        echo "Pod details:"
+        k3s kubectl describe pod -n {{ ess_namespace }} $CRASH_PODS | tail -50
+        exit 1
+      fi
+      
+      # Check if all ready
+      READY_COUNT=$(k3s kubectl get pods -n {{ ess_namespace }} -o jsonpath='{.items[?(@.status.conditions[?(@.type=="Ready")].status=="True")].metadata.name}' 2>/dev/null | wc -w)
+      TOTAL_COUNT=$(k3s kubectl get pods -n {{ ess_namespace }} -o jsonpath='{.items[*].metadata.name}' 2>/dev/null | wc -w)
+      
+      if [ "$READY_COUNT" -eq "$TOTAL_COUNT" ] && [ "$TOTAL_COUNT" -gt 0 ]; then
+        echo "✅ All ESS pods ready! ($READY_COUNT/$TOTAL_COUNT)"
+        exit 0
+      fi
+      
+      ELAPSED=$((ELAPSED + INTERVAL))
+      echo "⏳ Waiting for ESS pods... ($ELAPSED/$TIMEOUT seconds, Ready: $READY_COUNT/$TOTAL_COUNT)"
+      sleep $INTERVAL
+    done
+    
+    echo "❌ Timeout waiting for ESS pods after $TIMEOUT seconds"
+    echo "Final pod status:"
+    k3s kubectl get pods -n {{ ess_namespace }} -o wide
+    exit 1
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+- name: Display deployed pods
+  become: yes
+  command: k3s kubectl get pods -n {{ ess_namespace }}
+  register: matrix_pods
+
+- name: Show matrix pods
+  debug:
+    var: matrix_pods.stdout_lines
