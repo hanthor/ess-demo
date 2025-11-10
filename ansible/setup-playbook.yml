@@ -1,7 +1,7 @@
 ---
 # Ansible Playbook for ESS Demo Setup
 # This playbook provides an alternative to setup.sh for automated deployment
-# 
+#
 # Usage:
 #   ansible-playbook -i inventory.ini setup-playbook.yml
 #   ansible-playbook -i inventory.ini setup-playbook.yml --extra-vars "domain_name=ess.localhost"
@@ -12,7 +12,7 @@
   gather_facts: yes
   become: yes
   become_method: sudo
-  
+
   vars:
     # Directory paths
     script_dir: "{{ playbook_dir | dirname }}"
@@ -20,39 +20,39 @@
     image_cache_dir: "{{ script_dir }}/image-cache"
     demo_values_dir: "{{ script_dir }}/demo-values"
     certs_dir: "{{ script_dir }}/certs"
-    
+
     # Configuration
     cluster_name: "ess-demo"
     namespace: "ess"
     offline_mode: true
-    
+
     # Domain name (can be overridden with --extra-vars)
     domain_name: "{{ domain_name | default('') }}"
-    
+
     # Detect platform
     detected_os: "{{ 'macos' if ansible_os_family == 'Darwin' else 'linux' }}"
     detected_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' or ansible_architecture == 'arm64' else 'x86_64' }}"
     docker_arch: "{{ 'arm64' if detected_arch == 'arm64' else 'amd64' }}"
-  
+
   tasks:
     - name: Print setup header
       debug:
         msg: "ESS Community Portable Demo - Ansible Setup"
-    
+
     - name: Display detected platform
       debug:
         msg: "Detected platform: {{ detected_os }}/{{ detected_arch }}"
-    
+
     - name: Check if installers directory exists
       stat:
         path: "{{ installers_dir }}/{{ detected_os }}"
       register: installers_check
-      
+
     - name: Fail if installers not found
       fail:
         msg: "No installers found for {{ detected_os }}. Please run ./build/download-installers.sh first"
       when: not installers_check.stat.exists or installers_check.stat.isdir == false
-    
+
     # Docker/Podman Installation
     - name: Check if Docker is installed and running
       command: docker info
@@ -60,7 +60,7 @@
       failed_when: false
       changed_when: false
       become: no
-    
+
     - name: Check if Podman is available
       command: podman info
       register: podman_check
@@ -68,15 +68,15 @@
       changed_when: false
       become: no
       when: docker_check.rc != 0
-    
+
     - name: Determine container runtime
       set_fact:
         container_runtime: "{{ 'docker' if docker_check.rc == 0 else 'podman' if podman_check.rc == 0 else 'none' }}"
-    
+
     - name: Display container runtime
       debug:
         msg: "Using container runtime: {{ container_runtime }}"
-    
+
     # Install Kind
     - name: Check if Kind is installed
       command: kind --version
@@ -84,14 +84,14 @@
       failed_when: false
       changed_when: false
       become: no
-    
+
     - name: Install Kind
       copy:
         src: "{{ installers_dir }}/{{ detected_os }}/kind-{{ detected_os }}-{{ docker_arch }}"
         dest: /usr/local/bin/kind
         mode: '0755'
       when: kind_check.rc != 0
-    
+
     # Install kubectl
     - name: Check if kubectl is installed
       command: kubectl version --client
@@ -99,14 +99,14 @@
       failed_when: false
       changed_when: false
       become: no
-    
+
     - name: Install kubectl
       copy:
         src: "{{ installers_dir }}/{{ detected_os }}/kubectl"
         dest: /usr/local/bin/kubectl
         mode: '0755'
       when: kubectl_check.rc != 0
-    
+
     # Install Helm
     - name: Check if Helm is installed
       command: helm version
@@ -114,7 +114,7 @@
       failed_when: false
       changed_when: false
       become: no
-    
+
     - name: Install Helm
       block:
         - name: Extract Helm archive
@@ -122,7 +122,7 @@
             src: "{{ installers_dir }}/{{ detected_os }}/helm-{{ detected_os }}-{{ docker_arch }}.tar.gz"
             dest: /tmp
             remote_src: yes
-        
+
         - name: Copy Helm binary
           copy:
             src: "/tmp/{{ detected_os }}-{{ docker_arch }}/helm"
@@ -130,7 +130,7 @@
             mode: '0755'
             remote_src: yes
       when: helm_check.rc != 0
-    
+
     # Install mkcert
     - name: Check if mkcert is installed
       command: mkcert --version
@@ -138,36 +138,36 @@
       failed_when: false
       changed_when: false
       become: no
-    
+
     - name: Install mkcert
       copy:
         src: "{{ installers_dir }}/{{ detected_os }}/mkcert-{{ detected_os }}-{{ docker_arch }}"
         dest: /usr/local/bin/mkcert
         mode: '0755'
       when: mkcert_check.rc != 0
-    
+
     - name: Install mkcert CA
       command: mkcert -install
       become: no
       when: mkcert_check.rc != 0
-    
+
     # Prompt for domain name if not provided
     - name: Prompt for domain name
       pause:
         prompt: "Enter the base domain name for your ESS deployment (e.g., ess.localhost)"
       register: domain_prompt
       when: domain_name == ''
-    
+
     - name: Set domain name from prompt
       set_fact:
         domain_name: "{{ domain_prompt.user_input }}"
       when: domain_name == ''
-    
+
     - name: Validate domain name
       fail:
         msg: "Domain name cannot be empty"
       when: domain_name == ''
-    
+
     - name: Display final configuration
       debug:
         msg:
