@@ -1,0 +1,101 @@
+---
+- name: Ensure installers directory exists
+  file:
+    path: "{{ installers_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Detect platform tuple
+  set_fact:
+    platform_tuple: "{{ ansible_system | lower }}-{{ ansible_architecture }}"
+
+# Download k3s (if selected) - idempotent
+- name: Download k3s binary
+  ansible.builtin.get_url:
+    url: "https://github.com/k3s-io/k3s/releases/download/{{ k3s_version }}/k3s"
+    dest: "{{ installers_dir }}/k3s-{{ ansible_architecture }}"
+    mode: '0755'
+    force: no
+  when: k3s_version is defined
+
+# Download kind (if selected)
+- name: Download kind binary
+  ansible.builtin.get_url:
+    url: "https://github.com/kubernetes-sigs/kind/releases/download/{{ kind_version }}/kind-{{ ansible_architecture }}"
+    dest: "{{ installers_dir }}/kind-{{ ansible_architecture }}"
+    mode: '0755'
+    force: no
+  when: kind_version is defined
+
+# Download kubectl
+- name: Download kubectl binary
+  ansible.builtin.get_url:
+    url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
+    dest: "{{ installers_dir }}/kubectl-{{ ansible_architecture }}"
+    mode: '0755'
+    force: no
+  when: kubectl_version is defined
+
+# Download helm
+- name: Download helm archive
+  ansible.builtin.get_url:
+    url: "https://get.helm.sh/helm-{{ helm_version }}-linux-amd64.tar.gz"
+    dest: "{{ installers_dir }}/helm-{{ helm_version }}-linux-amd64.tar.gz"
+    force: no
+  when: helm_version is defined
+
+# Download k9s
+- name: Download k9s archive
+  ansible.builtin.get_url:
+    url: "https://github.com/derailed/k9s/releases/download/{{ k9s_version }}/k9s_Linux_amd64.tar.gz"
+    dest: "{{ installers_dir }}/k9s_{{ k9s_version }}.tar.gz"
+    force: no
+  when: k9s_version is defined
+
+# Download mkcert
+- name: Download mkcert
+  ansible.builtin.get_url:
+    url: "https://github.com/FiloSottile/mkcert/releases/download/{{ mkcert_version }}/mkcert-{{ mkcert_version }}-linux-amd64"
+    dest: "{{ installers_dir }}/mkcert-{{ mkcert_version }}-linux-amd64"
+    mode: '0755'
+    force: no
+  when: mkcert_version is defined
+
+# Download zstd (try primary and fall back to a known working link)
+- name: Download zstd tarball (primary URL)
+  ansible.builtin.get_url:
+    url: "https://github.com/facebook/zstd/releases/download/v{{ zstd_version }}/zstd-v{{ zstd_version }}.tar.gz"
+    dest: "{{ installers_dir }}/zstd-v{{ zstd_version }}.tar.gz"
+    force: no
+  register: zstd_download
+  failed_when: false
+
+- name: Download zstd tarball (fallback)
+  ansible.builtin.get_url:
+    url: "https://github.com/facebook/zstd/archive/refs/tags/v{{ zstd_version }}.tar.gz"
+    dest: "{{ installers_dir }}/zstd-v{{ zstd_version }}.tar.gz"
+    force: no
+  when: zstd_download is failed
+
+# Cache a placeholder for Ansible installer (we will download pip or package instructions)
+- name: Ensure ansible cache placeholder
+  file:
+    path: "{{ installers_dir }}/ansible-readme.txt"
+    state: touch
+    mode: '0644'
+  when: ansible_version is defined
+
+- name: Create installers index.json (idempotent)
+  copy:
+    dest: "{{ installers_dir }}/index.json"
+    content: |
+      {
+        "k3s_version": "{{ k3s_version }}",
+        "kind_version": "{{ kind_version }}",
+        "kubectl_version": "{{ kubectl_version }}",
+        "helm_version": "{{ helm_version }}",
+        "k9s_version": "{{ k9s_version }}",
+        "mkcert_version": "{{ mkcert_version }}",
+        "zstd_version": "{{ zstd_version }}"
+      }
+    force: yes

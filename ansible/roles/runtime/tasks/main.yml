@@ -1,0 +1,55 @@
+---
+- name: Check for Docker
+  command: docker info
+  register: docker_info
+  ignore_errors: yes
+
+- name: Check for Podman
+  command: podman info
+  register: podman_info
+  ignore_errors: yes
+
+- name: Decide runtime to use
+  set_fact:
+    use_kind: "{{ (docker_info.rc == 0) or (podman_info.rc == 0) }}"
+    use_k3s: "{{ not use_kind }}"
+
+- name: Show runtime decision
+  debug:
+    msg: |
+      runtime decision: use_kind={{ use_kind }}, use_k3s={{ use_k3s }}
+
+- name: Ensure kind is present when needed
+  when: use_kind
+  block:
+    - name: Ensure kind binary exists in installers
+      stat:
+        path: "{{ installers_dir }}/kind-{{ ansible_architecture }}"
+      register: kind_bin
+
+    - name: Notify if kind missing
+      debug:
+        msg: "Kind not found in installers directory. Set 'kind_version' or run installers role to fetch it."
+      when: not kind_bin.stat.exists
+
+- name: Ensure k3s installer is present when needed
+  when: use_k3s
+  block:
+    - name: Ensure k3s binary exists in installers
+      stat:
+        path: "{{ installers_dir }}/k3s-{{ ansible_architecture }}"
+      register: k3s_bin
+
+    - name: Notify if k3s missing
+      debug:
+        msg: "k3s installer not found in installers directory. Set 'k3s_version' or run installers role to fetch it."
+      when: not k3s_bin.stat.exists
+
+- name: Create runtime choice marker
+  copy:
+    dest: "{{ installers_dir }}/runtime-choice.txt"
+    content: |
+      use_kind: {{ use_kind }}
+      use_k3s: {{ use_k3s }}
+    mode: '0644'
+    force: yes

@@ -1,0 +1,14 @@
+---
+# Default installer versions - these can be overridden per-run.
+# Note: In the air-gapped store these will be static, but the build pipeline can update them.
+k3s_version: "v1.34.1+k3s1"
+kind_version: "v0.24.0"
+kubectl_version: "v1.31.3"
+helm_version: "v3.16.3"
+k9s_version: "v0.32.7"
+mkcert_version: "v1.4.4"
+zstd_version: "v1.5.6"
+ansible_version: "latest"
+
+# Target download directory (relative to project root)
+installers_dir: "{{ lookup('env','PWD') | default(playbook_dir) }}/installers"

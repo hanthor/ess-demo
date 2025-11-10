@@ -1,0 +1,14 @@
+---
+# Top-level playbook to download/cach installers and set up container runtime.
+# This playbook is intentionally idempotent and resumable.
+# Usage: ansible-playbook -i ansible/inventory/localhost.ini ansible/playbook.yml
+
+- hosts: localhost
+  connection: local
+  gather_facts: true
+  vars_files:
+    - roles/installers/vars/main.yml
+  roles:
+    - installers
+    - runtime
+
